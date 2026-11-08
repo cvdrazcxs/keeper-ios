@@ -1,0 +1,96 @@
+workflows:
+  ios-unsigned:
+    name: iOS build (unsigned .ipa)
+    # Бесплатный тариф Codemagic: 500 минут/мес на mac_mini_m2.
+    instance_type: mac_mini_m2
+    max_build_duration: 150
+    environment:
+      xcode: latest
+
+    scripts:
+      - name: Show toolchain
+        script: |
+          xcodebuild -version
+          swift --version
+
+      # Помощь Tonkeeper GoogleService-Info лежит в их приватном репо ios_keys;
+      # для сборки под Sideloadly достаточно технических заглушек
+      # (пуш-уведомления/Crashlytics при этом не работают).
+      - name: Create dummy Firebase configs
+        script: |
+          set -e
+          mkdir -p "Keeper/Resources/Firebase/Keeper" \
+                   "Keeper/Resources/Firebase/KeeperDev" \
+                   "Keeper/Resources/Firebase/KeeperUK"
+          write_plist() {
+            cat > "Keeper/Resources/Firebase/$1/GoogleService-Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>BUNDLE_ID</key><string>com.example.keeper.dummy</string>
+            <key>PROJECT_ID</key><string>dummy-project</string>
+            <key>API_KEY</key><string>AIza-DUMMY-KEY</string>
+            <key>GCM_SENDER_ID</key><string>123456789000</string>
+          </dict>
+          </plist>
+          EOF
+          }
+          for folder in Keeper KeeperDev KeeperUK; do write_plist "$folder"; done
+
+      - name: Prepare build dir
+        script: |
+          set -e
+          mkdir -p build/SourcePackages
+          sh scripts/setup_build_credentials.sh "$(pwd)/build"
+
+      # Беззнаковый билд под устройство; ретраи спасают от случайных
+      # сетевых 504 у GitHub Releases (уже скачанные SPM-артефакты при
+      # повторе пропускает).
+      - name: xcodebuild (device, codesign off, retries)
+        script: |
+          set -e
+          export CLONED_SOURCE_PACKAGES_DIR="$(pwd)/build/SourcePackages"
+          export XCODE_XCCONFIG_FILE="$(pwd)/Configurations/PackageBuildSettings.xcconfig"
+          export GIT_CONFIG_GLOBAL="$(pwd)/build/git-config"
+          attempt=1
+          max_attempts=4
+          while true; do
+            if xcodebuild \
+              -project Keeper.xcodeproj \
+              -scheme Keeper \
+              -configuration KeeperDebug \
+              -destination 'generic/platform=iOS' \
+              ARCHS=arm64 \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              CLANG_MODULE_CACHE_PATH="$HOME/Library/Developer/Xcode/DerivedData/ModuleCache.noindex" \
+              -derivedDataPath "$(pwd)/build/DerivedData" \
+              -clonedSourcePackagesDirPath "$(pwd)/build/SourcePackages" \
+              build; then
+              echo "xcodebuild succeeded on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "xcodebuild failed after $attempt attempts"
+              exit 1
+            fi
+            echo "xcodebuild failed (attempt $attempt/$max_attempts) — retrying in 75s"
+            sleep 75
+            attempt=$((attempt+1))
+          done
+
+      - name: Package unsigned .ipa
+        script: |
+          set -e
+          APP=$(find build/DerivedData/Build/Products -type d -maxdepth 3 -name "Keeper.app" | head -n 1)
+          [ -n "$APP" ] || { echo "Keeper.app not found"; ls -R build/DerivedData/Build/Products | head -50; exit 1; }
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/Keeper.app
+          (cd build/ipa && zip -q -r ../Keeper-unsigned.ipa Payload)
+          ls -lh build/Keeper-unsigned.ipa
+
+    artifacts:
+      - build/Keeper-unsigned.ipa
