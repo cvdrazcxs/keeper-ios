@@ -1,0 +1,16 @@
+name: Inventory (Xcode versions on runner)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-26
+    steps:
+      - name: List Xcodes + Swift versions
+        run: |
+          ls /Applications | grep -i xcode
+          for d in /Applications/Xcode*.app; do
+            echo "== $d =="
+            /usr/libexec/PlistBuddy -c "Print :ProcessInfo:CFBundleShortVersionString" "$d/Contents/Info.plist" 2>/dev/null || true
+          done
