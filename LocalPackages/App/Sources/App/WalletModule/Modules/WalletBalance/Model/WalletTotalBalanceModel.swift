@@ -18,6 +18,7 @@ final class WalletTotalBalanceModel: @unchecked Sendable {
 
     private let totalBalanceStore: TotalBalanceStore
     private let appSettingsStore: AppSettingsStore
+    private let appSettings: TKCore.AppSettings?
     private let backgroundUpdate: BackgroundUpdate
     private let updateQueue: DispatchQueue
 
@@ -25,6 +26,8 @@ final class WalletTotalBalanceModel: @unchecked Sendable {
     private var isLoadingBalance = false
 
     private var backgroundStateTask: Task<Void, Never>?
+    private var userDefaultsObserver: (any NSObjectProtocol)?
+    private var lastFakeBalanceSignature = ""
 
     init(
         wallet: Wallet,
@@ -32,11 +35,13 @@ final class WalletTotalBalanceModel: @unchecked Sendable {
         appSettingsStore: AppSettingsStore,
         backgroundUpdate: BackgroundUpdate,
         balanceLoader: BalanceLoader,
-        updateQueue: DispatchQueue
+        updateQueue: DispatchQueue,
+        appSettings: TKCore.AppSettings? = nil
     ) {
         self.wallet = wallet
         self.totalBalanceStore = totalBalanceStore
         self.appSettingsStore = appSettingsStore
+        self.appSettings = appSettings
         self.backgroundUpdate = backgroundUpdate
         self.updateQueue = updateQueue
 
@@ -62,10 +67,35 @@ final class WalletTotalBalanceModel: @unchecked Sendable {
                 didGetWalletScopedEvent(wallet)
             }
         }
+
+        // Fork: the fake balance lives in UserDefaults, so refresh the header
+        // whenever one of its keys changes (toggle / editing in settings).
+        guard let appSettings else { return }
+        userDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.updateQueue.async { [weak self] in
+                guard let self else { return }
+                let signature = Self.fakeBalanceSignature(appSettings)
+                guard signature != self.lastFakeBalanceSignature else { return }
+                self.lastFakeBalanceSignature = signature
+                self.updateModel()
+            }
+        }
     }
 
     deinit {
         backgroundStateTask?.cancel()
+        if let userDefaultsObserver {
+            NotificationCenter.default.removeObserver(userDefaultsObserver)
+        }
+    }
+
+    private static func fakeBalanceSignature(_ appSettings: TKCore.AppSettings) -> String {
+        "\(appSettings.isFakeBalanceEnabled)|\(appSettings.fakeBalanceAmount ?? "-")|\(appSettings.fakeBalanceSymbol ?? "-")"
     }
 
     func getState() throws -> State {

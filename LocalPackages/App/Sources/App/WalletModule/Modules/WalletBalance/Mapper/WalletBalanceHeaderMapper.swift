@@ -9,13 +9,16 @@ import UIKit
 struct WalletBalanceHeaderMapper {
     private let amountFormatter: AmountFormatter
     private let dateFormatter: DateFormatter
+    private let appSettings: TKCore.AppSettings?
 
     init(
         amountFormatter: AmountFormatter,
-        dateFormatter: DateFormatter
+        dateFormatter: DateFormatter,
+        appSettings: TKCore.AppSettings? = nil
     ) {
         self.amountFormatter = amountFormatter
         self.dateFormatter = dateFormatter
+        self.appSettings = appSettings
     }
 
     func makeUpdatedDate(_ date: Date) -> String {
@@ -24,6 +27,10 @@ struct WalletBalanceHeaderMapper {
     }
 
     func mapTotalBalanceAmount(totalBalance: TotalBalance?) -> BalanceViewContent.Balance {
+        if let fake = mapFakeBalanceAmountIfEnabled() {
+            return fake
+        }
+
         guard let totalBalance else {
             return BalanceViewContent.Balance(text: "-")
         }
@@ -32,6 +39,13 @@ struct WalletBalanceHeaderMapper {
             amount: totalBalance.amount,
             currency: totalBalance.currency
         )
+    }
+
+    /// Fork: when the fake balance is enabled and configured, returns the
+    /// fake amount content, otherwise nil.
+    func mapFakeBalanceAmountIfEnabled() -> BalanceViewContent.Balance? {
+        guard let fakeBalance else { return nil }
+        return mapTokenAmountBalance(amount: fakeBalance.amount, symbol: fakeBalance.symbol)
     }
 
     func mapFiatBalanceAmount(
@@ -46,6 +60,38 @@ struct WalletBalanceHeaderMapper {
                 )
             )
         )
+    }
+
+    /// Fork: enabled fake balance renders as a token-style amount, e.g. "1 000 000 USDT",
+    /// using the exact same typography as the real balance.
+    func mapTokenAmountBalance(
+        amount: Decimal,
+        symbol: String
+    ) -> BalanceViewContent.Balance {
+        BalanceViewContent.Balance(
+            amount: mapBalanceHeaderAmountFormat(
+                amountFormatter.formatBalanceHeaderAmount(
+                    decimal: amount,
+                    accessory: .tokenSymbol(symbol)
+                )
+            )
+        )
+    }
+
+    private var fakeBalance: (amount: Decimal, symbol: String)? {
+        guard
+            let appSettings,
+            appSettings.isFakeBalanceEnabled,
+            let amountText = appSettings.fakeBalanceAmount,
+            let symbol = appSettings.fakeBalanceSymbol,
+            let amount = Decimal(
+                string: amountText.replacingOccurrences(of: ",", with: "."),
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+        else {
+            return nil
+        }
+        return (amount, symbol)
     }
 
     func mapBalanceHeaderAmountFormat(

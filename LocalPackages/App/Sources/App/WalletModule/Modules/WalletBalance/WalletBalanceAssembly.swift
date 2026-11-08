@@ -100,7 +100,8 @@ struct WalletBalanceAssembly {
                 appSettingsStore: storesAssembly.appSettingsStore,
                 backgroundUpdate: keeperCoreMainAssembly.backgroundUpdateAssembly.backgroundUpdate,
                 balanceLoader: keeperCoreMainAssembly.loadersAssembly.balanceLoader,
-                updateQueue: queue
+                updateQueue: queue,
+                appSettings: coreAssembly.appSettings
             ),
             balanceLoader: keeperCoreMainAssembly.loadersAssembly.balanceLoader,
             walletsStore: storesAssembly.walletsStore,
@@ -108,7 +109,8 @@ struct WalletBalanceAssembly {
             appSettings: coreAssembly.appSettings,
             headerMapper: WalletBalanceHeaderMapper(
                 amountFormatter: keeperCoreMainAssembly.formattersAssembly.amountFormatter,
-                dateFormatter: keeperCoreMainAssembly.formattersAssembly.dateFormatter
+                dateFormatter: keeperCoreMainAssembly.formattersAssembly.dateFormatter,
+                appSettings: coreAssembly.appSettings
             ),
             configuration: configuration,
             tooltipsService: coreAssembly.tooltipsAssembly.service

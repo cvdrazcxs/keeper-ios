@@ -121,7 +121,8 @@ private extension MultichainWalletCoordinator {
         let totalBalanceUpdateQueue = DispatchQueue(label: "MultichainWalletTotalBalanceQueue")
         let headerMapper = WalletBalanceHeaderMapper(
             amountFormatter: keeperCoreMainAssembly.formattersAssembly.amountFormatter,
-            dateFormatter: keeperCoreMainAssembly.formattersAssembly.dateFormatter
+            dateFormatter: keeperCoreMainAssembly.formattersAssembly.dateFormatter,
+            appSettings: coreAssembly.appSettings
         )
         let multichainService = keeperCoreMainAssembly.servicesAssembly.multichainService()
 
@@ -217,7 +218,8 @@ private extension MultichainWalletCoordinator {
                 appSettingsStore: storesAssembly.appSettingsStore,
                 backgroundUpdate: keeperCoreMainAssembly.backgroundUpdateAssembly.backgroundUpdate,
                 balanceLoader: keeperCoreMainAssembly.loadersAssembly.balanceLoader,
-                updateQueue: totalBalanceUpdateQueue
+                updateQueue: totalBalanceUpdateQueue,
+                appSettings: coreAssembly.appSettings
             ),
             balanceLoader: keeperCoreMainAssembly.loadersAssembly.balanceLoader,
             walletsStore: storesAssembly.walletsStore,

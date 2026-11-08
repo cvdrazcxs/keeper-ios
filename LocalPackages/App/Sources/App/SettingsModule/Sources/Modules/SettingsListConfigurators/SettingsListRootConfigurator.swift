@@ -30,6 +30,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapBattery: ((Wallet) -> Void)?
     var didTapConnectedApps: ((Wallet) -> Void)?
     var didTapMigration: ((Wallet) -> Void)?
+    var didTapFakeBalanceEditor: (() -> Void)?
 
     // MARK: - SettingsListConfigurator
 
@@ -56,6 +57,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     private let anaylticsProvider: AnalyticsProvider
     private let walletNotificationStore: WalletNotificationStore
     private let settingsRepository: SettingsRepository
+    private let tkAppSettings: TKCore.AppSettings
+    private var userDefaultsObserver: (any NSObjectProtocol)?
 
     // MARK: - Init
 
@@ -70,7 +73,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         walletDeleteController: WalletDeleteController,
         anaylticsProvider: AnalyticsProvider,
         walletNotificationStore: WalletNotificationStore,
-        settingsRepository: SettingsRepository
+        settingsRepository: SettingsRepository,
+        tkAppSettings: TKCore.AppSettings
     ) {
         self.wallet = wallet
         self.walletsStore = walletsStore
@@ -83,6 +87,15 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         self.anaylticsProvider = anaylticsProvider
         self.walletNotificationStore = walletNotificationStore
         self.settingsRepository = settingsRepository
+        self.tkAppSettings = tkAppSettings
+        userDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.didUpdateState?(self.createState())
+        }
         walletsStore.addObserver(self) { observer, event in
             switch event {
             case let .didUpdateWalletMetaData(wallet):
@@ -152,6 +165,12 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                 let state = observer.createState()
                 observer.didUpdateState?(state)
             }
+        }
+    }
+
+    deinit {
+        if let userDefaultsObserver {
+            NotificationCenter.default.removeObserver(userDefaultsObserver)
         }
     }
 
@@ -231,6 +250,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         items.append(createThemeItem())
         items.append(createSearchItem())
         items.append(createLanguageItem())
+        items.append(createFakeBalanceToggleItem())
+        items.append(createFakeBalanceItem())
 
         guard !items.isEmpty else { return nil }
 
@@ -716,9 +737,52 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             }
         )
     }
+    private func createFakeBalanceToggleItem() -> SettingsListItem {
+        SettingsListItem(
+            id: .fakeBalanceToggleItemIdentifier,
+            title: SettingsListItemTitle(FakeBalanceStrings.showFakeBalance),
+            accessory: .toggle(
+                SettingsListItemToggleAccessory(
+                    isOn: tkAppSettings.isFakeBalanceEnabled,
+                    onToggle: { [weak self] isOn in
+                        guard let self else { return }
+                        self.tkAppSettings.isFakeBalanceEnabled = isOn
+                        self.didUpdateState?(self.createState())
+                    }
+                )
+            )
+        )
+    }
+
+    private func createFakeBalanceItem() -> SettingsListItem {
+        let currentValue: String = {
+            guard tkAppSettings.isFakeBalanceEnabled,
+                  let amount = tkAppSettings.fakeBalanceAmount,
+                  let symbol = tkAppSettings.fakeBalanceSymbol else {
+                return "—"
+            }
+            return "\(amount) \(symbol)"
+        }()
+        return SettingsListItem(
+            id: .fakeBalanceItemIdentifier,
+            title: SettingsListItemTitle(FakeBalanceStrings.fakeBalance),
+            accessory: .text(
+                SettingsListItemTextAccessory(
+                    text: currentValue,
+                    color: .accentBlue,
+                    textStyle: .label1
+                )
+            ),
+            onTap: { [weak self] _ in
+                self?.didTapFakeBalanceEditor?()
+            }
+        )
+    }
 }
 
 private extension String {
+    static let fakeBalanceToggleItemIdentifier = "FakeBalanceToggleItem"
+    static let fakeBalanceItemIdentifier = "FakeBalanceItem"
     static let walletIdentifier = "WalletItem"
     static let securityItemIdentifier = "SecurityItem"
     static let backupItemIdentifier = "BackupItem"

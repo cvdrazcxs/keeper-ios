@@ -65,7 +65,8 @@ private extension SettingsCoordinator {
             walletDeleteController: keeperCoreMainAssembly.walletDeleteController,
             anaylticsProvider: coreAssembly.analyticsProvider,
             walletNotificationStore: keeperCoreMainAssembly.storesAssembly.walletNotificationStore,
-            settingsRepository: keeperCoreMainAssembly.repositoriesAssembly.settingsRepository()
+            settingsRepository: keeperCoreMainAssembly.repositoriesAssembly.settingsRepository(),
+            tkAppSettings: coreAssembly.appSettings
         )
 
         configurator.didOpenURL = { [coreAssembly] in
@@ -134,6 +135,10 @@ private extension SettingsCoordinator {
 
         configurator.didTapMigration = { [weak self] wallet in
             self?.openMigration(wallet: wallet)
+        }
+
+        configurator.didTapFakeBalanceEditor = { [weak self] in
+            self?.openFakeBalanceEditor()
         }
 
         configurator.didDeleteWallet = { [weak self] in
@@ -304,6 +309,15 @@ private extension SettingsCoordinator {
         }
 
         router.push(viewController: module.viewController)
+    }
+
+    func openFakeBalanceEditor() {
+        let viewController = FakeBalanceEditorAssembly.module(
+            wallet: wallet,
+            managedBalanceStore: keeperCoreMainAssembly.storesAssembly.managedBalanceStore,
+            appSettings: coreAssembly.appSettings
+        )
+        router.push(viewController: viewController)
     }
 
     func openBackup(wallet: Wallet) {

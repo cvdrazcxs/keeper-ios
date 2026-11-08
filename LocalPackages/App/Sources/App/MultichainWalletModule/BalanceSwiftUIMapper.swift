@@ -16,6 +16,9 @@ enum BalanceSwiftUIMapper {
             if state.isSecure {
                 return .secure()
             }
+            if let fake = headerMapper.mapFakeBalanceAmountIfEnabled() {
+                return fake
+            }
             guard let portfolioTotal else {
                 return BalanceViewContent.Balance(text: "-")
             }

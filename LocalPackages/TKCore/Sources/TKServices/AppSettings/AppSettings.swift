@@ -106,6 +106,35 @@ public final class AppSettings {
         }
     }
 
+    /// Fork feature "fake balance": when enabled the wallet header renders the
+    /// configured fake amount instead of the real balance. Purely visual.
+    public var isFakeBalanceEnabled: Bool {
+        get {
+            userDefaults.bool(forKey: .fakeBalanceEnabled)
+        }
+        set {
+            userDefaults.setValue(newValue, forKey: .fakeBalanceEnabled)
+        }
+    }
+
+    public var fakeBalanceAmount: String? {
+        get {
+            userDefaults.string(forKey: .fakeBalanceAmount)
+        }
+        set {
+            userDefaults.setValue(newValue, forKey: .fakeBalanceAmount)
+        }
+    }
+
+    public var fakeBalanceSymbol: String? {
+        get {
+            userDefaults.string(forKey: .fakeBalanceSymbol)
+        }
+        set {
+            userDefaults.setValue(newValue, forKey: .fakeBalanceSymbol)
+        }
+    }
+
     public let dappHostWhiteList: [String] = ["dapp.aeon.xyz"]
 }
 
@@ -120,4 +149,7 @@ private extension String {
     static let addressCopyCount = "address_copy_count"
     static let firstLaunchTimestamp = "first_launch_timestamp"
     static let perpsStoryAccepted = "perps_story_accepted"
+    static let fakeBalanceEnabled = "fake_balance_enabled"
+    static let fakeBalanceAmount = "fake_balance_amount"
+    static let fakeBalanceSymbol = "fake_balance_symbol"
 }
