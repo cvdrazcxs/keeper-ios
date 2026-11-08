@@ -112,14 +112,14 @@ public final class StoriesPresenter {
                         guard isWebPage else {
                             guard isClosable else { return }
                             dismissReason = .action
-                            storiesViewController?.dismiss(animated: true, completion: {
+                            self?.storiesViewController?.dismiss(animated: true, completion: {
                                 deeplinkAction(link.url.absoluteString)
                             })
                             return
                         }
                         let safariViewController = SFSafariViewController(url: link.url)
                         safariViewController.modalPresentationStyle = .fullScreen
-                        storiesViewController?.present(safariViewController, animated: true)
+                        self?.storiesViewController?.present(safariViewController, animated: true)
                     }
                 )
             }
