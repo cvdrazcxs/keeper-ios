@@ -55,14 +55,15 @@ jobs:
       # Кешируем чужие зависонсы (git-репы + скачанные бинарники .xcframework):
       # после первой удачной доставки всё дальше даётся из кеша, и сетевые
       # 504 от GitHub Releases перестают ронять прогон.
-      - name: Cache SwiftPM dependencies
-        uses: actions/cache@v4
+      # Кеш чужих зависонсов (git-репы + бинарные .xcframework): restore в начале,
+      # save в конце с if: always() — кеш сохраняется даже при неудавшейся сборке.
+      - name: Restore SwiftPM dependencies cache
+        uses: actions/cache/restore@v4
         with:
           path: build/SourcePackages
           key: spm-deps-v1
           restore-keys: |
             spm-deps-v1
-          save-always: true
 
       # Реплицирует prepare-шаг их make compile без xcbeautify и без
       # make setup (на CI toolchain-установщики пропускаются сами).
@@ -71,25 +72,39 @@ jobs:
           mkdir -p build/SourcePackages
           sh scripts/setup_build_credentials.sh "$PWD/build"
 
-      - name: xcodebuild (device, codesign off)
+      - name: xcodebuild (device, codesign off, with retries)
         run: |
           set -o pipefail
           export CLONED_SOURCE_PACKAGES_DIR="$PWD/build/SourcePackages"
           export XCODE_XCCONFIG_FILE="$PWD/Configurations/PackageBuildSettings.xcconfig"
           export GIT_CONFIG_GLOBAL="$PWD/build/git-config"
-          xcodebuild \
-            -project Keeper.xcodeproj \
-            -scheme Keeper \
-            -configuration KeeperDebug \
-            -destination 'generic/platform=iOS' \
-            ARCHS=arm64 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CLANG_MODULE_CACHE_PATH="$HOME/Library/Developer/Xcode/DerivedData/ModuleCache.noindex" \
-            -derivedDataPath "$PWD/build/DerivedData" \
-            -clonedSourcePackagesDirPath "$PWD/build/SourcePackages" \
-            build
+          attempt=1
+          max_attempts=6
+          while true; do
+            if xcodebuild \
+              -project Keeper.xcodeproj \
+              -scheme Keeper \
+              -configuration KeeperDebug \
+              -destination 'generic/platform=iOS' \
+              ARCHS=arm64 \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              CLANG_MODULE_CACHE_PATH="$HOME/Library/Developer/Xcode/DerivedData/ModuleCache.noindex" \
+              -derivedDataPath "$PWD/build/DerivedData" \
+              -clonedSourcePackagesDirPath "$PWD/build/SourcePackages" \
+              build; then
+              echo "xcodebuild succeeded on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "xcodebuild failed after $attempt attempts"
+              exit 1
+            fi
+            echo "xcodebuild failed (attempt $attempt/$max_attempts) — retrying in 75s (SPM докачивает только недостающие артефакты)"
+            sleep 75
+            attempt=$((attempt+1))
+          done
 
       - name: Package unsigned .ipa
         run: |
@@ -101,6 +116,13 @@ jobs:
           cp -R "$APP" build/ipa/Payload/Keeper.app
           (cd build/ipa && zip -q -r ../Keeper-unsigned.ipa Payload)
           ls -lh build/Keeper-unsigned.ipa
+
+      - name: Save SwiftPM dependencies cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: build/SourcePackages
+          key: spm-deps-v1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
