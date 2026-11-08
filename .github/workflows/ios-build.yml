@@ -52,6 +52,18 @@ jobs:
           }
           for folder in Keeper KeeperDev KeeperUK; do write_plist "$folder"; done
 
+      # Кешируем чужие зависонсы (git-репы + скачанные бинарники .xcframework):
+      # после первой удачной доставки всё дальше даётся из кеша, и сетевые
+      # 504 от GitHub Releases перестают ронять прогон.
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-deps-v1
+          restore-keys: |
+            spm-deps-v1
+          save-always: true
+
       # Реплицирует prepare-шаг их make compile без xcbeautify и без
       # make setup (на CI toolchain-установщики пропускаются сами).
       - name: Prepare build dir
