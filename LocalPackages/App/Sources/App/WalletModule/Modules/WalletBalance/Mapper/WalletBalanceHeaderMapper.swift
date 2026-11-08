@@ -47,7 +47,7 @@ struct WalletBalanceHeaderMapper {
     /// Tokens without a resolvable price count their raw typed amount.
     func mapFakeBalanceAmountIfEnabled(
         currency: Currency?,
-        unitPriceResolver: ((String) -> Decimal?)? = nil
+        unitPriceResolver: ((_ item: FakeBalanceItem) -> Decimal?)? = nil
     ) -> BalanceViewContent.Balance? {
         guard
             let appSettings,

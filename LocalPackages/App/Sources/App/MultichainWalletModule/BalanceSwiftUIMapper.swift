@@ -10,7 +10,7 @@ enum BalanceSwiftUIMapper {
         state: WalletTotalBalanceModel.State,
         freshness: BalanceFreshness,
         headerMapper: WalletBalanceHeaderMapper,
-        fakeUnitPriceResolver: ((String) -> Decimal?)? = nil,
+        fakeUnitPriceResolver: ((_ item: FakeBalanceItem) -> Decimal?)? = nil,
         configuration: Configuration
     ) -> BalanceViewConfig {
         let balanceContent: BalanceViewContent.Balance = {

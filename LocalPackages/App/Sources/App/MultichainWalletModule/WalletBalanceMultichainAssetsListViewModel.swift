@@ -753,7 +753,10 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
         let fakeState = FakeBalanceState.current(from: settings)
         guard
             fakeState.isEnabled,
-            let fakeAmount = fakeState.fakeAmountDecimal(forSymbol: item.asset.symbol)
+            let fakeAmount = fakeState.fakeAmountDecimal(
+            forAssetSymbol: item.asset.symbol,
+            chainTag: item.asset.chain?.rawValue
+        )
         else {
             return nil
         }

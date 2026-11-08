@@ -11,6 +11,9 @@ final class FakeBalanceEditorViewModel: ObservableObject {
         let symbol: String
         let name: String
         let imageURL: URL?
+        /// Display chain ("ton"/"tron", nil for catalog picks) — keeps
+        /// "USDT" TRC20 and "USD₮" TON as separate fakes.
+        let chain: String?
     }
 
     let title = FakeBalanceStrings.fakeBalance
@@ -58,28 +61,30 @@ final class FakeBalanceEditorViewModel: ObservableObject {
            let current = selectedTokenID,
            !options.contains(where: { $0.id == current }) {
             selectedTokenID = options.first?.id
-            amountText = tokenOptions.first.map { savedAmountText(symbol: $0.symbol) } ?? ""
+            amountText = tokenOptions.first.map { savedAmountText(for: $0) } ?? ""
         }
     }
 
     func select(_ option: TokenOption) {
         externalOption = nil
         selectedTokenID = option.id
-        amountText = savedAmountText(symbol: option.symbol)
+        amountText = savedAmountText(for: option)
     }
 
     /// Fork: token picked from the full multichain catalog (SOL, ETH, TRUMP…)
     /// — kept as an "external" option with its own symbol/name/logo.
     func setExternalToken(symbol: String, name: String, imageURL: URL?) {
         let resolvedSymbol = symbol.isEmpty ? name : symbol
-        externalOption = TokenOption(
+        let option = TokenOption(
             id: "external",
             symbol: resolvedSymbol,
             name: name,
-            imageURL: imageURL
+            imageURL: imageURL,
+            chain: nil
         )
+        externalOption = option
         selectedTokenID = nil
-        amountText = savedAmountText(symbol: resolvedSymbol)
+        amountText = savedAmountText(for: option)
     }
 
     /// Fork: upserts the fake amount of the selected token. Amounts of other
@@ -97,11 +102,19 @@ final class FakeBalanceEditorViewModel: ObservableObject {
                 .replacingOccurrences(of: ",", with: ".")
                 .trimmingCharacters(in: .whitespaces),
             name: option.name,
-            imageURLString: option.imageURL?.absoluteString
+            imageURLString: option.imageURL?.absoluteString,
+            chain: option.chain
         )
         var items = appSettings.fakeBalanceItems
         let normalized = FakeBalanceState.normalizedSymbol(option.symbol)
-        items.removeAll { FakeBalanceState.normalizedSymbol($0.symbol) == normalized }
+        let tag = FakeBalanceState.normalizedChain(option.chain)
+        // Chain-aware upsert: a "tron" fake replaces the "tron" fake and any
+        // legacy untagged fake of the same symbol, but keeps a "ton" one.
+        items.removeAll {
+            FakeBalanceState.normalizedSymbol($0.symbol) == normalized
+                && (FakeBalanceState.normalizedChain($0.chain) == tag
+                    || (tag != nil && FakeBalanceState.normalizedChain($0.chain) == nil))
+        }
         items.insert(item, at: 0)
         appSettings.fakeBalanceItems = items
         appSettings.isFakeBalanceEnabled = true
@@ -129,7 +142,7 @@ final class FakeBalanceEditorViewModel: ObservableObject {
 
     /// Saved fake amount for the token — shown as a badge in the list.
     func fakeAmountText(for option: TokenOption) -> String? {
-        let amount = savedAmountText(symbol: option.symbol)
+        let amount = savedAmountText(for: option)
         return amount.isEmpty ? nil : amount
     }
 
@@ -146,14 +159,29 @@ final class FakeBalanceEditorViewModel: ObservableObject {
             return
         }
         let normalized = FakeBalanceState.normalizedSymbol(savedItem.symbol)
-        if let matched = tokenOptions.first(where: { FakeBalanceState.normalizedSymbol($0.symbol) == normalized }) {
+        let savedChain = FakeBalanceState.normalizedChain(savedItem.chain)
+        // Prefer the option of the same chain, then any symbol match, then a
+        // catalog-style entry that carries the saved (possibly tagged) fake.
+        if let matched = tokenOptions.first(where: {
+            FakeBalanceState.normalizedSymbol($0.symbol) == normalized
+                && FakeBalanceState.chainCompatible(
+                    fakeChain: savedChain,
+                    assetChain: $0.chain
+                )
+                && (savedChain != nil || FakeBalanceState.normalizedChain($0.chain) == nil)
+        }) {
             selectedTokenID = matched.id
+        } else if let anyMatch = tokenOptions.first(where: {
+            FakeBalanceState.normalizedSymbol($0.symbol) == normalized
+        }) {
+            selectedTokenID = anyMatch.id
         } else if !normalized.isEmpty {
             externalOption = TokenOption(
                 id: "external",
                 symbol: savedItem.symbol,
                 name: savedItem.name ?? savedItem.symbol,
-                imageURL: savedItem.imageURLString.flatMap { URL(string: $0) }
+                imageURL: savedItem.imageURLString.flatMap { URL(string: $0) },
+                chain: savedItem.chain
             )
         }
         if selectedTokenID == nil, externalOption == nil {
@@ -162,11 +190,16 @@ final class FakeBalanceEditorViewModel: ObservableObject {
         amountText = savedItem.amount
     }
 
-    private func savedAmountText(symbol: String) -> String {
-        let normalized = FakeBalanceState.normalizedSymbol(symbol)
-        return fakeItems
-            .first { FakeBalanceState.normalizedSymbol($0.symbol) == normalized }?
+    private func savedAmountText(for option: TokenOption) -> String {
+        fakeDisplayState
+            .fakeItem(matchingAssetSymbol: option.symbol, chainTag: option.chain)?
             .amount ?? ""
+    }
+
+    /// One matching rule everywhere: rows, badges and amount prefill go
+    /// through FakeBalanceState so a "tron" fake never touches a "ton" row.
+    private var fakeDisplayState: FakeBalanceState {
+        FakeBalanceState(isEnabled: true, items: fakeItems)
     }
 
     private var selectedOption: TokenOption? {
@@ -193,13 +226,13 @@ final class FakeBalanceEditorViewModel: ObservableObject {
             let order: Int
             switch item {
             case let .ton(tonItem):
-                option = TokenOption(id: "ton", symbol: TonInfo.symbol, name: tonItem.title, imageURL: nil)
+                option = TokenOption(id: "ton", symbol: TonInfo.symbol, name: tonItem.title, imageURL: nil, chain: "ton")
                 order = 0
             case .tronUSDT:
-                option = TokenOption(id: "tron_usdt", symbol: USDT.symbol, name: "USDT (TRON)", imageURL: USDT.imageURL)
+                option = TokenOption(id: "tron_usdt", symbol: USDT.symbol, name: "USDT (TRON)", imageURL: USDT.imageURL, chain: "tron")
                 order = 1
             case .tronTRX:
-                option = TokenOption(id: "tron_trx", symbol: TRX.symbol, name: "TRX (TRON)", imageURL: nil)
+                option = TokenOption(id: "tron_trx", symbol: TRX.symbol, name: "TRX (TRON)", imageURL: nil, chain: "tron")
                 order = 2
             case let .jetton(jettonItem):
                 let info = jettonItem.jetton.jettonInfo
@@ -207,7 +240,8 @@ final class FakeBalanceEditorViewModel: ObservableObject {
                     id: info.address.toRaw(),
                     symbol: jettonSymbol(info),
                     name: info.name,
-                    imageURL: info.imageURL
+                    imageURL: info.imageURL,
+                    chain: "ton"
                 )
                 order = 3
             case .staking, .ethena:
@@ -231,7 +265,7 @@ final class FakeBalanceEditorViewModel: ObservableObject {
     }
 
     private var fallbackTonOption: TokenOption {
-        TokenOption(id: "ton", symbol: TonInfo.symbol, name: TonInfo.name, imageURL: nil)
+        TokenOption(id: "ton", symbol: TonInfo.symbol, name: TonInfo.name, imageURL: nil, chain: "ton")
     }
 
     private func parseAmount() -> Decimal? {

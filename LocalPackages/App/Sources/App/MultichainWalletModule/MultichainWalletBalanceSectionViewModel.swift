@@ -181,14 +181,16 @@ final class MultichainWalletBalanceSectionViewModel: ObservableObject {
 
     /// Fork: resolves the live unit price of a faked token from the wallet's
     /// portfolio, so the header total always equals the sum of the faked rows.
-    private func fakeUnitPriceResolver() -> (String) -> Decimal? {
+    /// Chain-tagged fakes only take the price of the matching chain's asset.
+    private func fakeUnitPriceResolver() -> (FakeBalanceItem) -> Decimal? {
         let assets = portfolioStore.getState()[wallet]?.assets ?? []
         let currency = currencyStore.getState()
         let formatting = portfolioFormatting
-        return { fakeSymbol in
-            let normalized = FakeBalanceState.normalizedSymbol(fakeSymbol)
+        return { item in
+            let normalized = FakeBalanceState.normalizedSymbol(item.symbol)
             guard let asset = assets.first(where: {
                 FakeBalanceState.normalizedSymbol($0.asset.symbol) == normalized
+                    && FakeBalanceState.chainCompatible(fakeChain: item.chain, assetChain: $0.asset.chain?.rawValue)
             }) else {
                 return nil
             }

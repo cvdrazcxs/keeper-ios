@@ -161,17 +161,23 @@ public struct FakeBalanceItem: Codable, Hashable, Sendable {
     public let amount: String
     public let name: String?
     public let imageURLString: String?
+    /// Display chain the fake was configured against ("ton"/"tron"/nil).
+    /// When set, the fake only covers assets of that chain — "USDT" on TRON
+    /// and "USD₮" on TON stay independent fakes.
+    public let chain: String?
 
     public init(
         symbol: String,
         amount: String,
         name: String? = nil,
-        imageURLString: String? = nil
+        imageURLString: String? = nil,
+        chain: String? = nil
     ) {
         self.symbol = symbol
         self.amount = amount
         self.name = name
         self.imageURLString = imageURLString
+        self.chain = chain
     }
 }
 

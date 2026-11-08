@@ -19,7 +19,7 @@ struct FakeBalanceState {
     static func renderKey(from settings: TKCore.AppSettings) -> String {
         guard settings.isFakeBalanceEnabled else { return "off" }
         return "on|" + settings.fakeBalanceItems
-            .map { "\($0.symbol)|\($0.amount)" }
+            .map { "\($0.symbol)|\($0.amount)|\($0.chain ?? "-")" }
             .sorted()
             .joined(separator: ";")
     }
@@ -28,29 +28,58 @@ struct FakeBalanceState {
     /// is resolvable (keeping the header equal to the token rows), else the
     /// raw amount. Displayed with the display-currency symbol.
     func displayTotalFiat(
-        unitPriceResolver: ((_ fakeSymbol: String) -> Decimal?)?
+        unitPriceResolver: ((_ item: FakeBalanceItem) -> Decimal?)?
     ) -> Decimal? {
         guard isEnabled, !items.isEmpty else { return nil }
         var total: Decimal?
         for item in items {
             guard let amount = Self.decimalAmount(ofText: item.amount) else { continue }
-            let unitPrice = unitPriceResolver?(item.symbol)
+            let unitPrice = unitPriceResolver?(item)
             let value = unitPrice.map { amount * $0 } ?? amount
             total = (total ?? 0) + value
         }
         return total
     }
 
-    /// The faked amount for a symbol, if any. One fake covers every chain
-    /// where the symbol matches (aliases like "USD₮" and "USDT" are equal).
-    func fakeAmountDecimal(forSymbol rawSymbol: String) -> Decimal? {
+    /// The faked amount applying to the given asset row. Fakes configured
+    /// with a chain tag cover only that chain ("USDT" TRC20 ≠ "USD₮" TON);
+    /// untagged fakes (catalog picks, pre-migration entries) still match by
+    /// normalized symbol on any chain.
+    func fakeAmountDecimal(forAssetSymbol rawSymbol: String, chainTag chainRaw: String?) -> Decimal? {
+        guard let item = fakeItem(matchingAssetSymbol: rawSymbol, chainTag: chainRaw) else { return nil }
+        return Self.decimalAmount(ofText: item.amount)
+    }
+
+    /// The fake item that applies to the given asset row (nil = no fake).
+    func fakeItem(matchingAssetSymbol rawSymbol: String, chainTag chainRaw: String?) -> FakeBalanceItem? {
         guard isEnabled else { return nil }
         let normalized = Self.normalizedSymbol(rawSymbol)
         guard !normalized.isEmpty else { return nil }
-        for item in items where Self.normalizedSymbol(item.symbol) == normalized {
-            return Self.decimalAmount(ofText: item.amount)
+        let assetChain = Self.normalizedChain(chainRaw)
+
+        var candidates = items.filter { Self.normalizedSymbol($0.symbol) == normalized }
+        if let assetChain {
+            if let exact = candidates.first(where: { Self.normalizedChain($0.chain) == assetChain }) {
+                return exact
+            }
+            // Tagged fakes never leak to another chain; only untagged ones do.
+            candidates = candidates.filter { Self.normalizedChain($0.chain) == nil }
         }
-        return nil
+        return candidates.first
+    }
+
+    /// Normalized chain tag: lower-case trimmed token, or nil when untagged.
+    static func normalizedChain(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// True when a fake item applies to an asset of the given chain. Tagged
+    /// fakes stick to their chain; untagged fakes (nil) cover any chain.
+    static func chainCompatible(fakeChain: String?, assetChain: String?) -> Bool {
+        guard let fake = normalizedChain(fakeChain) else { return true }
+        guard let asset = normalizedChain(assetChain) else { return true }
+        return fake == asset
     }
 
     /// "USD₮" and "USDT" must match; everything is upper-cased first.
