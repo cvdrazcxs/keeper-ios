@@ -327,6 +327,9 @@ private extension SettingsCoordinator {
                 )
             }
         }
+        module.viewModel.didRequestClose = { [weak self] in
+            self?.router.pop(animated: true)
+        }
         router.push(viewController: module.viewController)
     }
 

@@ -3,6 +3,7 @@ import TKUIKit
 
 struct FakeBalanceEditorScreen: View {
     @ObservedObject var viewModel: FakeBalanceEditorViewModel
+    @Environment(\.tkPalette) private var palette
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +27,7 @@ struct FakeBalanceEditorScreen: View {
 
                     Text(FakeBalanceStrings.caption)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color(UIColor.secondaryLabel))
+                        .foregroundStyle(TKColor.textSecondary.resolve(palette))
                         .padding(.top, 8)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -38,7 +39,7 @@ struct FakeBalanceEditorScreen: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(UIColor.systemGroupedBackground))
+        .background(TKColor.backgroundPage.resolve(palette))
         .ignoresSafeArea(.all, edges: .bottom)
         .task {
             viewModel.reload()
@@ -50,7 +51,7 @@ private extension FakeBalanceEditorScreen {
     func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color(UIColor.secondaryLabel))
+            .foregroundStyle(TKColor.textSecondary.resolve(palette))
             .padding(.bottom, 8)
     }
 
@@ -75,10 +76,10 @@ private extension FakeBalanceEditorScreen {
                 HStack(spacing: 10) {
                     SwiftUI.Image(systemName: "magnifyingglass")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(TKColor.accentBlue.resolve(palette))
                     Text(FakeBalanceStrings.allCoinsButton)
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(TKColor.accentBlue.resolve(palette))
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
@@ -87,7 +88,7 @@ private extension FakeBalanceEditorScreen {
             }
             .buttonStyle(.plain)
         }
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(TKColor.backgroundContent.resolve(palette))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
@@ -98,10 +99,10 @@ private extension FakeBalanceEditorScreen {
             VStack(alignment: .leading, spacing: 2) {
                 Text(option.symbol)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(UIColor.label))
+                    .foregroundStyle(TKColor.textPrimary.resolve(palette))
                 Text(option.name)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color(UIColor.secondaryLabel))
+                    .foregroundStyle(TKColor.textSecondary.resolve(palette))
                     .lineLimit(1)
             }
 
@@ -110,7 +111,7 @@ private extension FakeBalanceEditorScreen {
             if viewModel.selectedTokenID == option.id || viewModel.externalOption?.id == option.id {
                 SwiftUI.Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 20))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(TKColor.accentBlue.resolve(palette))
             }
         }
         .padding(.horizontal, 12)
@@ -139,10 +140,10 @@ private extension FakeBalanceEditorScreen {
 
     func tokenPlaceholder(_ option: FakeBalanceEditorViewModel.TokenOption) -> some View {
         ZStack {
-            Color(UIColor.systemGray5)
+            TKColor.backgroundContentTint.resolve(palette)
             Text(String(option.symbol.prefix(1)).uppercased())
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Color(UIColor.secondaryLabel))
+                .foregroundStyle(TKColor.textSecondary.resolve(palette))
         }
     }
 
@@ -151,18 +152,18 @@ private extension FakeBalanceEditorScreen {
             TextField(FakeBalanceStrings.amountPlaceholder, text: $viewModel.amountText)
                 .keyboardType(.decimalPad)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Color(UIColor.label))
+                .foregroundStyle(TKColor.textPrimary.resolve(palette))
                 .autocorrectionDisabled(true)
 
             if !viewModel.selectedSymbol.isEmpty {
                 Text(viewModel.selectedSymbol)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(UIColor.secondaryLabel))
+                    .foregroundStyle(TKColor.textSecondary.resolve(palette))
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .background(TKColor.backgroundContent.resolve(palette))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
@@ -174,8 +175,16 @@ private extension FakeBalanceEditorScreen {
                 .font(.system(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
-                .background(viewModel.canConfirm ? Color.accentColor : Color(UIColor.systemGray4))
-                .foregroundStyle(viewModel.canConfirm ? Color.white : Color(UIColor.systemGray))
+                .background(
+                    viewModel.canConfirm
+                        ? TKColor.accentBlue.resolve(palette)
+                        : TKColor.backgroundContentTint.resolve(palette)
+                )
+                .foregroundStyle(
+                    viewModel.canConfirm
+                        ? TKColor.fixed(.white).resolve(palette)
+                        : TKColor.textTertiary.resolve(palette)
+                )
                 .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)

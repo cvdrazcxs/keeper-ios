@@ -62,20 +62,48 @@ struct WalletBalanceHeaderMapper {
         )
     }
 
-    /// Fork: enabled fake balance renders as a token-style amount, e.g. "1 000 000 USDT",
-    /// using the exact same typography as the real balance.
+    /// Fork: enabled fake balance renders as a token-style amount, e.g. "500 USD₮",
+    /// using the exact same typography as the real balance. Unlike the real token
+    /// header it formats compact — "500", "1 000,5" — never padded to 8 digits.
     func mapTokenAmountBalance(
         amount: Decimal,
         symbol: String
     ) -> BalanceViewContent.Balance {
-        BalanceViewContent.Balance(
-            amount: mapBalanceHeaderAmountFormat(
-                amountFormatter.formatBalanceHeaderAmount(
-                    decimal: amount,
-                    accessory: .tokenSymbol(symbol)
-                )
+        let formatted = amountFormatter.format(
+            decimal: amount,
+            accessory: .none,
+            style: .compact
+        )
+        let trimmedSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        return BalanceViewContent.Balance(
+            amount: .init(
+                trailingText: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
+                textParts: headerNumberParts(fromFormattedText: formatted),
+                textSize: .regular,
+                tooltipText: nil,
+                accessibilityText: [formatted, trimmedSymbol]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
             )
         )
+    }
+
+    /// The header draws the decimal-scale part with the small fraction style —
+    /// split the compact string the same way the real header does, at the last
+    /// decimal separator (grouping uses spaces, never "," or ".").
+    private func headerNumberParts(
+        fromFormattedText formattedText: String
+    ) -> [BalanceViewContent.Balance.Amount.TextPart] {
+        guard let separatorIndex = formattedText.lastIndex(where: { $0 == "," || $0 == "." }) else {
+            return [.init(text: formattedText, role: .primary)]
+        }
+        return [
+            .init(
+                text: String(formattedText[formattedText.startIndex ..< separatorIndex]),
+                role: .primary
+            ),
+            .init(text: String(formattedText[separatorIndex...]), role: .fraction),
+        ]
     }
 
     private var fakeBalance: (amount: Decimal, symbol: String)? {

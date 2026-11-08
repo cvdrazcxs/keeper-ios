@@ -283,7 +283,8 @@ private extension MultichainWalletCoordinator {
             earnAssetOffersRepository: keeperCoreMainAssembly.repositoriesAssembly.earnAssetOffersRepository(
                 isEarnEnabled: isEarnEnabled
             ),
-            canManage: true
+            canManage: true,
+            fakeBalanceSettings: coreAssembly.appSettings
         )
         assetsListViewModel.onTapOpenAssets = { [weak coordinator] in
             coordinator?.didTapOpenCryptoAssets?()

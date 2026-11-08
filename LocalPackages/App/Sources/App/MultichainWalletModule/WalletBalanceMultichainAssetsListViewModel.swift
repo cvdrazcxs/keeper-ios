@@ -2,6 +2,7 @@ import BigInt
 import Combine
 import Foundation
 import KeeperCore
+import TKCore
 import TKLocalize
 import TKLogging
 import TKUIKit
@@ -85,6 +86,7 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
     private let multichainAssetBalanceProvider: MultichainAssetBalanceProvider
     private let currencyStore: CurrencyStore
     private let amountFormatter: AmountFormatter
+    private let fakeBalanceSettings: TKCore.AppSettings?
     private let portfolioStore: MultichainPortfolioStore
     private let stakingPoolsStore: StakingPoolsStore
     private let processedBalanceStore: ProcessedBalanceStore
@@ -98,6 +100,10 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
     private let stakingCommentMapper: StakingItemCommentMapper
     private var isActive = true
     private var needsPresentationRefresh = false
+
+    // Fork: fake-balance prank — UserDefaults observer + dedupe signature.
+    private var fakeBalanceDefaultsObserver: (any NSObjectProtocol)?
+    private var lastFakeBalanceRenderKey: String?
 
     @Published private(set) var state: State = .idle
 
@@ -145,7 +151,8 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
         tonStakingAPYProvider: @escaping (Wallet) -> Decimal?,
         tonStakingAPYTextFormatter: @escaping (Decimal?) -> String?,
         earnAssetOffersRepository: EarnAssetOffersRepository,
-        canManage: Bool
+        canManage: Bool,
+        fakeBalanceSettings: TKCore.AppSettings? = nil
     ) {
         self.wallet = wallet
         self.multichainService = multichainService
@@ -160,6 +167,7 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
         self.tonStakingAPYTextFormatter = tonStakingAPYTextFormatter
         self.earnAssetOffersRepository = earnAssetOffersRepository
         self.canManage = canManage
+        self.fakeBalanceSettings = fakeBalanceSettings
         stakingCommentMapper = StakingItemCommentMapper(amountFormatter: amountFormatter)
 
         appSettingsStore.addObserver(self) { observer, event in
@@ -174,6 +182,25 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
                 }
             case .didUpdateSearchEngine, .didUpdateHistoryFilter:
                 break
+            }
+        }
+
+        // Fork: fake-balance values live in UserDefaults, outside of the
+        // AppSettingsStore event stream — observe raw writes and re-render
+        // the matching rows as soon as the prank is reconfigured.
+        fakeBalanceDefaultsObserver = fakeBalanceSettings.flatMap { settings in
+            NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                let renderKey = FakeBalanceState.renderKey(from: settings)
+                Task { @MainActor in
+                    guard let self else { return }
+                    guard renderKey != self.lastFakeBalanceRenderKey else { return }
+                    self.lastFakeBalanceRenderKey = renderKey
+                    self.refreshPresentation()
+                }
             }
         }
     }
@@ -633,13 +660,20 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
             in: item.price.prices,
             currency: displayCurrency
         ) ?? 0
-        let balance = isSecureMode
-            ? String.secureModeValueShort
-            : multichainFormatter.formatAmount(
-                amount: item.balance,
-                fractionDigits: item.asset.decimals,
-                amountFormatter: amountFormatter
-            )
+        let fakeRow = fakeBalanceRowOverride(
+            for: item,
+            displayCurrency: displayCurrency,
+            unitPrice: unitPrice,
+            isSecureMode: isSecureMode
+        )
+        let balance = fakeRow?.amountText
+            ?? (isSecureMode
+                ? String.secureModeValueShort
+                : multichainFormatter.formatAmount(
+                    amount: item.balance,
+                    fractionDigits: item.asset.decimals,
+                    amountFormatter: amountFormatter
+                ))
         let fiatTotal = multichainFormatter.convertedAmount(
             for: item,
             currency: displayCurrency
@@ -650,13 +684,14 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
             accessory: .fiat(displayCurrency),
             style: .compact
         )
-        let fiatText = isSecureMode
-            ? String.secureModeValueShort
-            : amountFormatter.format(
-                decimal: fiatTotal,
-                accessory: .fiat(displayCurrency),
-                style: .compact
-            )
+        let fiatText = fakeRow?.fiatText
+            ?? (isSecureMode
+                ? String.secureModeValueShort
+                : amountFormatter.format(
+                    decimal: fiatTotal,
+                    accessory: .fiat(displayCurrency),
+                    style: .compact
+                ))
 
         let diff24h = multichainFormatter.lookupString(
             in: item.price.diff24h,
@@ -698,6 +733,43 @@ final class WalletBalanceMultichainAssetsListViewModel: ObservableObject {
             avatarImageSource: imageSource,
             showsVerificationCheckmark: item.asset.isTrusted
         )
+    }
+
+    /// Fork: when the fake-balance prank is enabled, a row whose symbol matches
+    /// the fake token shows the fake amount plus fiat derived from the real
+    /// unit price. Secure mode always wins.
+    private func fakeBalanceRowOverride(
+        for item: MultichainAsset,
+        displayCurrency: Currency,
+        unitPrice: Double,
+        isSecureMode: Bool
+    ) -> (amountText: String, fiatText: String)? {
+        guard
+            !isSecureMode,
+            let settings = fakeBalanceSettings
+        else {
+            return nil
+        }
+        let fakeState = FakeBalanceState.current(from: settings)
+        guard
+            fakeState.isEnabled,
+            let fakeAmount = fakeState.decimalAmount,
+            fakeState.matchesSymbol(item.asset.symbol)
+        else {
+            return nil
+        }
+
+        let amountText = amountFormatter.format(
+            decimal: fakeAmount,
+            accessory: .none,
+            style: .compact
+        )
+        let fiatText = amountFormatter.format(
+            decimal: fakeAmount * Decimal(unitPrice),
+            accessory: .fiat(displayCurrency),
+            style: .compact
+        )
+        return (amountText, fiatText)
     }
 
     private func apyText(for assetId: String) -> String? {
