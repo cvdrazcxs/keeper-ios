@@ -58,8 +58,8 @@ final class FakeBalanceEditorViewModel: ObservableObject {
         guard options.map(\.id) != tokenOptions.map(\.id) else { return }
         tokenOptions = options
         if externalOption == nil,
-           let selectedTokenID,
-           !options.contains(where: { $0.id == selectedTokenID }) {
+           let current = selectedTokenID,
+           !options.contains(where: { $0.id == current }) {
             selectedTokenID = options.first?.id
         }
     }

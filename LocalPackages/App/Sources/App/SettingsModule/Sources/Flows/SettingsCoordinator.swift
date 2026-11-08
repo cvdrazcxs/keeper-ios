@@ -355,7 +355,7 @@ private extension SettingsCoordinator {
         module.output.didFinish = { [weak self] in
             self?.router.pop(animated: true)
         }
-        router.push(viewController: module.viewController)
+        router.push(viewController: module.view)
     }
 
     func openBackup(wallet: Wallet) {
