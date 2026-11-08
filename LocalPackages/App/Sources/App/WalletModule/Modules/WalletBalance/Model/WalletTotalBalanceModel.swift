@@ -95,7 +95,7 @@ final class WalletTotalBalanceModel: @unchecked Sendable {
     }
 
     private static func fakeBalanceSignature(_ appSettings: TKCore.AppSettings) -> String {
-        "\(appSettings.isFakeBalanceEnabled)|\(appSettings.fakeBalanceAmount ?? "-")|\(appSettings.fakeBalanceSymbol ?? "-")"
+        FakeBalanceState.renderKey(from: appSettings)
     }
 
     func getState() throws -> State {

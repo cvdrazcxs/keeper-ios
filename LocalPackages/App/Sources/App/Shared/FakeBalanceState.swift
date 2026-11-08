@@ -1,56 +1,68 @@
 import Foundation
 import TKCore
 
-/// Fork: snapshot of the fake-balance prank state, shared by the header
-/// mapper and the token list view models. Display-only — nothing here
-/// writes to wallet balances, history or real portfolio stores.
+/// Fork: snapshot of the fake-balance prank, shared by the header mapper and
+/// token list view models. Display-only — real balances are never written.
 struct FakeBalanceState {
     let isEnabled: Bool
-    let amountText: String
-    let symbol: String
-    let name: String?
+    let items: [FakeBalanceItem]
 
-    /// Reads the current prank configuration from settings.
     static func current(from settings: TKCore.AppSettings) -> FakeBalanceState {
         FakeBalanceState(
             isEnabled: settings.isFakeBalanceEnabled,
-            amountText: settings.fakeBalanceAmount ?? "",
-            symbol: settings.fakeBalanceSymbol ?? "",
-            name: settings.fakeBalanceName
+            items: settings.fakeBalanceItems
         )
     }
 
     /// Stable signature of the prank configuration, used to skip redundant
     /// presentation rebuilds when unrelated UserDefaults values change.
     static func renderKey(from settings: TKCore.AppSettings) -> String {
-        [
-            settings.isFakeBalanceEnabled ? "1" : "0",
-            settings.fakeBalanceAmount ?? "",
-            settings.fakeBalanceSymbol ?? "",
-        ]
-        .joined(separator: "|")
+        guard settings.isFakeBalanceEnabled else { return "off" }
+        return "on|" + settings.fakeBalanceItems
+            .map { "\($0.symbol)|\($0.amount)" }
+            .sorted()
+            .joined(separator: ";")
     }
 
-    /// Parsed fake amount as entered by the user (accepts "," as decimal mark).
-    var decimalAmount: Decimal? {
-        Decimal(
-            string: amountText.replacingOccurrences(of: ",", with: "."),
-            locale: Locale(identifier: "en_US_POSIX")
-        )
+    /// Sum of all fake amounts — the header shows it as the fiat total
+    /// ("$ 500") with the selected display-currency symbol.
+    var displayTotalAmount: Decimal? {
+        var total: Decimal?
+        for item in items {
+            guard let amount = Self.decimalAmount(ofText: item.amount) else { continue }
+            total = (total ?? 0) + amount
+        }
+        return total
     }
 
-    /// Aliases like "USD₮" and "USDT" (row title) must match.
-    func matchesSymbol(_ rawSymbol: String) -> Bool {
+    /// The faked amount for a symbol, if any. One fake covers every chain
+    /// where the symbol matches (aliases like "USD₮" and "USDT" are equal).
+    func fakeAmountDecimal(forSymbol rawSymbol: String) -> Decimal? {
+        guard isEnabled else { return nil }
         let normalized = Self.normalizedSymbol(rawSymbol)
-        guard !normalized.isEmpty else { return false }
-        return normalized == Self.normalizedSymbol(symbol)
+        guard !normalized.isEmpty else { return nil }
+        for item in items where Self.normalizedSymbol(item.symbol) == normalized {
+            return Self.decimalAmount(ofText: item.amount)
+        }
+        return nil
     }
 
-    private static func normalizedSymbol(_ raw: String) -> String {
+    /// "USD₮" and "USDT" must match; everything is upper-cased first.
+    static func normalizedSymbol(_ raw: String) -> String {
         raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: .diacriticInsensitive, locale: nil)
             .replacingOccurrences(of: "₮", with: "T")
             .uppercased()
+    }
+
+    /// Parses "1 000,5" / "1000.5" — group separators are ignored.
+    static func decimalAmount(ofText raw: String) -> Decimal? {
+        let normalized = raw
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespaces)
+        guard !normalized.isEmpty else { return nil }
+        return Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
     }
 }

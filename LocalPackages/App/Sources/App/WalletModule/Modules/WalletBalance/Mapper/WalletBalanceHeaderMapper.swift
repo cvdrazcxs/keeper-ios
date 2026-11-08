@@ -27,7 +27,7 @@ struct WalletBalanceHeaderMapper {
     }
 
     func mapTotalBalanceAmount(totalBalance: TotalBalance?) -> BalanceViewContent.Balance {
-        if let fake = mapFakeBalanceAmountIfEnabled() {
+        if let fake = mapFakeBalanceAmountIfEnabled(currency: totalBalance?.currency) {
             return fake
         }
 
@@ -41,11 +41,19 @@ struct WalletBalanceHeaderMapper {
         )
     }
 
-    /// Fork: when the fake balance is enabled and configured, returns the
-    /// fake amount content, otherwise nil.
-    func mapFakeBalanceAmountIfEnabled() -> BalanceViewContent.Balance? {
-        guard let fakeBalance else { return nil }
-        return mapTokenAmountBalance(amount: fakeBalance.amount, symbol: fakeBalance.symbol)
+    /// Fork: the enabled fake balance renders exactly like the real fiat
+    /// total — the amount with the display-currency symbol ("$ 500",
+    /// "2 500 ₽"), never a token suffix. Several faked tokens are summed up.
+    func mapFakeBalanceAmountIfEnabled(currency: Currency?) -> BalanceViewContent.Balance? {
+        guard
+            let appSettings,
+            appSettings.isFakeBalanceEnabled,
+            let currency,
+            let total = FakeBalanceState.current(from: appSettings).displayTotalAmount
+        else {
+            return nil
+        }
+        return mapFiatBalanceAmount(amount: total, currency: currency)
     }
 
     func mapFiatBalanceAmount(
@@ -60,66 +68,6 @@ struct WalletBalanceHeaderMapper {
                 )
             )
         )
-    }
-
-    /// Fork: enabled fake balance renders as a token-style amount, e.g. "500 USD₮",
-    /// using the exact same typography as the real balance. Unlike the real token
-    /// header it formats compact — "500", "1 000,5" — never padded to 8 digits.
-    func mapTokenAmountBalance(
-        amount: Decimal,
-        symbol: String
-    ) -> BalanceViewContent.Balance {
-        let formatted = amountFormatter.format(
-            decimal: amount,
-            accessory: .none,
-            style: .compact
-        )
-        let trimmedSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-        return BalanceViewContent.Balance(
-            amount: .init(
-                trailingText: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
-                textParts: headerNumberParts(fromFormattedText: formatted),
-                textSize: .regular,
-                tooltipText: nil,
-                accessibilityText: [formatted, trimmedSymbol]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
-            )
-        )
-    }
-
-    /// The header draws the decimal-scale part with the small fraction style —
-    /// split the compact string the same way the real header does, at the last
-    /// decimal separator (grouping uses spaces, never "," or ".").
-    private func headerNumberParts(
-        fromFormattedText formattedText: String
-    ) -> [BalanceViewContent.Balance.Amount.TextPart] {
-        guard let separatorIndex = formattedText.lastIndex(where: { $0 == "," || $0 == "." }) else {
-            return [.init(text: formattedText, role: .primary)]
-        }
-        return [
-            .init(
-                text: String(formattedText[formattedText.startIndex ..< separatorIndex]),
-                role: .primary
-            ),
-            .init(text: String(formattedText[separatorIndex...]), role: .fraction),
-        ]
-    }
-
-    private var fakeBalance: (amount: Decimal, symbol: String)? {
-        guard
-            let appSettings,
-            appSettings.isFakeBalanceEnabled,
-            let amountText = appSettings.fakeBalanceAmount,
-            let symbol = appSettings.fakeBalanceSymbol,
-            let amount = Decimal(
-                string: amountText.replacingOccurrences(of: ",", with: "."),
-                locale: Locale(identifier: "en_US_POSIX")
-            )
-        else {
-            return nil
-        }
-        return (amount, symbol)
     }
 
     func mapBalanceHeaderAmountFormat(

@@ -33,6 +33,22 @@ struct FakeBalanceEditorScreen: View {
 
                     confirmButton
                         .padding(.top, 24)
+
+                    if viewModel.hasAnyFakes {
+                        Button {
+                            viewModel.resetAll()
+                        } label: {
+                            Text(FakeBalanceStrings.resetAll)
+                                .font(.system(size: 17, weight: .medium))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(TKColor.backgroundContent.resolve(palette))
+                                .foregroundStyle(TKColor.textSecondary.resolve(palette))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 12)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
@@ -108,10 +124,17 @@ private extension FakeBalanceEditorScreen {
 
             Spacer(minLength: 8)
 
-            if viewModel.selectedTokenID == option.id || viewModel.externalOption?.id == option.id {
-                SwiftUI.Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(TKColor.accentBlue.resolve(palette))
+            VStack(alignment: .trailing, spacing: 4) {
+                if let fakedAmount = viewModel.fakeAmountText(for: option) {
+                    Text(fakedAmount)
+                        .font(.system(size: 13))
+                        .foregroundStyle(TKColor.accentBlue.resolve(palette))
+                }
+                if viewModel.selectedTokenID == option.id || viewModel.externalOption?.id == option.id {
+                    SwiftUI.Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(TKColor.accentBlue.resolve(palette))
+                }
             }
         }
         .padding(.horizontal, 12)

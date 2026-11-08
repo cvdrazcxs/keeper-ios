@@ -37,8 +37,12 @@ enum FakeBalanceStrings {
 
     static var caption: String {
         isRussian
-            ? "Когда включено, на главном экране отображается эта монета и сумма вместо реального баланса."
-            : "When enabled, the main screen shows this token and amount instead of the real balance."
+            ? "Можно накрутить сразу несколько монет — они суммируются в шапке и в строках. Только отображение, реальные средства не трогаются."
+            : "Fake as many coins as you like — they add up in the header total and rows. Display only, real funds stay untouched."
+    }
+
+    static var resetAll: String {
+        isRussian ? "Сбросить всё" : "Reset all"
     }
 
     static var confirm: String {

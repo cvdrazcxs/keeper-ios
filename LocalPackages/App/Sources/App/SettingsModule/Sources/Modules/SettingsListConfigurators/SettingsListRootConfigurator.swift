@@ -755,13 +755,17 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     }
 
     private func createFakeBalanceItem() -> SettingsListItem {
+        let fakedItems = FakeBalanceState.current(from: tkAppSettings).items
         let currentValue: String = {
-            guard tkAppSettings.isFakeBalanceEnabled,
-                  let amount = tkAppSettings.fakeBalanceAmount,
-                  let symbol = tkAppSettings.fakeBalanceSymbol else {
+            guard tkAppSettings.isFakeBalanceEnabled, !fakedItems.isEmpty else {
                 return "—"
             }
-            return "\(amount) \(symbol)"
+            let shown = fakedItems
+                .prefix(2)
+                .map { "\($0.amount) \($0.symbol)" }
+                .joined(separator: ", ")
+            let hiddenCount = fakedItems.count - 2
+            return hiddenCount > 0 ? "\(shown) +\(hiddenCount)" : shown
         }()
         return SettingsListItem(
             id: .fakeBalanceItemIdentifier,

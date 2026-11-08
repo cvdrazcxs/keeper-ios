@@ -117,43 +117,62 @@ public final class AppSettings {
         }
     }
 
-    public var fakeBalanceAmount: String? {
+    /// Fork feature "fake balance": each faked token is stored as an item so
+    /// several coins can be faked at once. Newest entry first. Migrates the
+    /// legacy single-fake storage on first read.
+    public var fakeBalanceItems: [FakeBalanceItem] {
         get {
-            userDefaults.string(forKey: .fakeBalanceAmount)
+            if let data = userDefaults.data(forKey: .fakeBalanceItems) {
+                return (try? JSONDecoder().decode([FakeBalanceItem].self, from: data)) ?? []
+            }
+            guard
+                let amount = userDefaults.string(forKey: .fakeBalanceAmount),
+                let symbol = userDefaults.string(forKey: .fakeBalanceSymbol)
+            else {
+                return []
+            }
+            let migrated = [FakeBalanceItem(
+                symbol: symbol,
+                amount: amount,
+                name: userDefaults.string(forKey: .fakeBalanceName),
+                imageURLString: userDefaults.string(forKey: .fakeBalanceImageURLString)
+            )]
+            if let data = try? JSONEncoder().encode(migrated) {
+                userDefaults.setValue(data, forKey: .fakeBalanceItems)
+            }
+            return migrated
         }
         set {
-            userDefaults.setValue(newValue, forKey: .fakeBalanceAmount)
-        }
-    }
-
-    public var fakeBalanceSymbol: String? {
-        get {
-            userDefaults.string(forKey: .fakeBalanceSymbol)
-        }
-        set {
-            userDefaults.setValue(newValue, forKey: .fakeBalanceSymbol)
-        }
-    }
-
-    public var fakeBalanceName: String? {
-        get {
-            userDefaults.string(forKey: .fakeBalanceName)
-        }
-        set {
-            userDefaults.setValue(newValue, forKey: .fakeBalanceName)
-        }
-    }
-
-    public var fakeBalanceImageURLString: String? {
-        get {
-            userDefaults.string(forKey: .fakeBalanceImageURLString)
-        }
-        set {
-            userDefaults.setValue(newValue, forKey: .fakeBalanceImageURLString)
+            let data = (try? JSONEncoder().encode(newValue)) ?? Data()
+            userDefaults.setValue(data, forKey: .fakeBalanceItems)
+            userDefaults.removeObject(forKey: .fakeBalanceAmount)
+            userDefaults.removeObject(forKey: .fakeBalanceSymbol)
+            userDefaults.removeObject(forKey: .fakeBalanceName)
+            userDefaults.removeObject(forKey: .fakeBalanceImageURLString)
         }
     }
 
     public let dappHostWhiteList: [String] = ["dapp.aeon.xyz"]
+}
+
+/// Fork feature "fake balance": one faked token entry.
+public struct FakeBalanceItem: Codable, Hashable, Sendable {
+    public let symbol: String
+    public let amount: String
+    public let name: String?
+    public let imageURLString: String?
+
+    public init(
+        symbol: String,
+        amount: String,
+        name: String? = nil,
+        imageURLString: String? = nil
+    ) {
+        self.symbol = symbol
+        self.amount = amount
+        self.name = name
+        self.imageURLString = imageURLString
+    }
 }
 
 private extension String {
@@ -172,4 +191,5 @@ private extension String {
     static let fakeBalanceSymbol = "fake_balance_symbol"
     static let fakeBalanceName = "fake_balance_name"
     static let fakeBalanceImageURLString = "fake_balance_image_url"
+    static let fakeBalanceItems = "fake_balance_items"
 }
