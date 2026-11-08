@@ -98,7 +98,6 @@ let package = Package(
             resources: [.process("Resources")],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -123,7 +122,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

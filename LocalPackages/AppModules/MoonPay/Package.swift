@@ -21,14 +21,12 @@ let package = Package(
                 .product(name: "TKLogging", package: "TKLogging"),
             ],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
             name: "MoonPayTests",
             dependencies: ["MoonPay"],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

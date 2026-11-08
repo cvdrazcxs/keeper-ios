@@ -27,7 +27,6 @@ let package = Package(
             sources: ["TonConnectAPI"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

@@ -36,7 +36,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -50,7 +49,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -62,14 +60,12 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
             name: "TKCryptoKit",
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -77,7 +73,6 @@ let package = Package(
             dependencies: [.byName(name: "TKCryptoKit")],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

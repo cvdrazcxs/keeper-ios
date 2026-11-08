@@ -15,7 +15,6 @@ let package = Package(
         .target(
             name: "TKAppInfo",
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

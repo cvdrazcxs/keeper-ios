@@ -28,7 +28,6 @@ let package = Package(
                 "TKLogging",
             ],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

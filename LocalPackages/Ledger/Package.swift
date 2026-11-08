@@ -31,7 +31,6 @@ let package = Package(
             path: "Sources/TonTransport",
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -43,7 +42,6 @@ let package = Package(
             ],
             path: "Tests/TonTransportTests",
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

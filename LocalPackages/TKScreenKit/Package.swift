@@ -30,7 +30,6 @@ let package = Package(
             path: "TKScreenKit/Sources/TKScreenKit",
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

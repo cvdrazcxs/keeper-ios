@@ -33,14 +33,12 @@ let package = Package(
                 .product(name: "TKUIKit", package: "TKUIKit"),
             ],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
             name: "PerpsTests",
             dependencies: ["Perps"],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

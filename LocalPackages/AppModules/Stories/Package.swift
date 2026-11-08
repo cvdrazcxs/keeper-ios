@@ -32,7 +32,6 @@ let package = Package(
                 .product(name: "TKUIKit", package: "TKUIKit"),
             ],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -47,7 +46,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

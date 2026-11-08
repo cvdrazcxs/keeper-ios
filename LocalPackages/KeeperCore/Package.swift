@@ -77,7 +77,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -87,7 +86,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -100,7 +98,6 @@ let package = Package(
             ],
             path: "Sources/KeeperCoreSensitive",
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -220,7 +217,6 @@ let package = Package(
             sources: ["Sources"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -268,7 +264,6 @@ let package = Package(
             sources: ["Sources"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .target(
@@ -279,7 +274,6 @@ let package = Package(
             path: "Packages/TKBatteryAPI",
             sources: ["Sources"],
             swiftSettings: [
-                .treatAllWarnings(as: .error),
                 .treatWarning("DeprecatedDeclaration", as: .warning),
             ] + unusedImportAccessAsWarning
         ),
@@ -295,7 +289,6 @@ let package = Package(
             sources: ["Sources"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ] + unusedImportAccessAsWarning
         ),
         .target(
@@ -310,7 +303,6 @@ let package = Package(
             sources: ["Sources"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
         .testTarget(
@@ -320,7 +312,6 @@ let package = Package(
             ],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],

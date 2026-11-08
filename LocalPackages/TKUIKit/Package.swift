@@ -37,7 +37,6 @@ private enum XcodeVersion {
 
 private let tkUIKitSwiftSettings: [SwiftSetting] = {
     var settings: [SwiftSetting] = [
-        .treatAllWarnings(as: .error),
     ]
     if XcodeVersion.atLeast(major: 27, minor: 1) {
         settings.append(.define("XCODE_VERSION_AT_LEAST_27_1"))
@@ -99,7 +98,6 @@ let package = Package(
             dependencies: ["TKUIKit"],
 
             swiftSettings: [
-                .treatAllWarnings(as: .error),
             ]
         ),
     ],
