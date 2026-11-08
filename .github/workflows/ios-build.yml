@@ -65,6 +65,20 @@ jobs:
           restore-keys: |
             spm-deps-v1
 
+      # Кеш результатов компиляции (Xcode 26): при неизменных исходниках
+      # модули не пересобираются заново — перебор после правки одного файла
+      # сокращается с ~18 до ~5-10 минут. Ключ уникальный на прогон
+      # (run_number), restore-keys подтягивает последний сохранённый.
+      - name: Restore Swift compilation cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/DerivedData/CompilationCache.noindex
+            build/DerivedData/CompilationCache
+          key: compilation-cache-${{ github.run_number }}
+          restore-keys: |
+            compilation-cache-
+
       # Реплицирует prepare-шаг их make compile без xcbeautify и без
       # make setup (на CI toolchain-установщики пропускаются сами).
       - name: Prepare build dir
@@ -90,6 +104,7 @@ jobs:
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGN_IDENTITY="" \
+              COMPILATION_CACHE_ENABLE_CACHING=YES \
               CLANG_MODULE_CACHE_PATH="$HOME/Library/Developer/Xcode/DerivedData/ModuleCache.noindex" \
               -derivedDataPath "$PWD/build/DerivedData" \
               -clonedSourcePackagesDirPath "$PWD/build/SourcePackages" \
@@ -117,12 +132,29 @@ jobs:
           (cd build/ipa && zip -q -r ../Keeper-unsigned.ipa Payload)
           ls -lh build/Keeper-unsigned.ipa
 
+      # Диагностика: смотрим действительное имя папки кеша компиляции в
+      # DerivedData, чтобы кешировать именно её на следующих прогонах.
+      - name: Inspect DerivedData dirs (cache paths)
+        if: always()
+        run: ls -la build/DerivedData || true
+
       - name: Save SwiftPM dependencies cache
         if: always()
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: build/SourcePackages
           key: spm-deps-v1
+
+      - name: Save Swift compilation cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/DerivedData/CompilationCache.noindex
+            build/DerivedData/CompilationCache
+          key: compilation-cache-${{ github.run_number }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
