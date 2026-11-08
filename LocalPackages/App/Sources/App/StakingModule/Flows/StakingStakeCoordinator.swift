@@ -1,0 +1,123 @@
+import KeeperCore
+import TKCoordinator
+import TKCore
+import TKScreenKit
+import TKUIKit
+import TonSwift
+import UIKit
+
+final class StakingStakeCoordinator: RouterCoordinator<NavigationControllerRouter> {
+    var didClose: (() -> Void)?
+    var didRequestOpenDeposit: (() -> Void)?
+
+    private weak var confirmationCoordinator: StakingConfirmationCoordinator?
+
+    private let wallet: Wallet
+    private let stakingPoolInfo: StackingPoolInfo
+    private let initiatedBy: InitiatedBy
+    private let utm: UtmParameters
+    private let keeperCoreMainAssembly: KeeperCore.MainAssembly
+    private let coreAssembly: TKCore.CoreAssembly
+
+    init(
+        wallet: Wallet,
+        stakingPoolInfo: StackingPoolInfo,
+        initiatedBy: InitiatedBy,
+        utm: UtmParameters = .empty,
+        keeperCoreMainAssembly: KeeperCore.MainAssembly,
+        coreAssembly: TKCore.CoreAssembly,
+        router: NavigationControllerRouter
+    ) {
+        self.wallet = wallet
+        self.stakingPoolInfo = stakingPoolInfo
+        self.initiatedBy = initiatedBy
+        self.utm = utm
+        self.keeperCoreMainAssembly = keeperCoreMainAssembly
+        self.coreAssembly = coreAssembly
+
+        super.init(router: router)
+    }
+
+    override func start(deeplink: (any CoordinatorDeeplink)? = nil) {
+        openStakingDepositInput()
+    }
+
+    func handleTonkeeperPublishDeeplink(sign: Data) -> Bool {
+        confirmationCoordinator?.handleTonkeeperPublishDeeplink(sign: sign) ?? false
+    }
+
+    func openStakingDepositInput() {
+        let stakingDepositInputAPYModule = StakingDepositInputAPYAssembly.module(
+            wallet: wallet,
+            stakingPool: stakingPoolInfo,
+            keeperCoreMainAssembly: keeperCoreMainAssembly
+        )
+
+        let configurator = DepositStakingInputViewModelConfiguration(
+            wallet: wallet,
+            stakingPool: stakingPoolInfo,
+            balanceStore: keeperCoreMainAssembly.storesAssembly.processedBalanceStore,
+            amountFormatter: keeperCoreMainAssembly.formattersAssembly.amountFormatter
+        )
+
+        let module = StakingInputAssembly.module(
+            configuration: configurator,
+            detailsViewController: stakingDepositInputAPYModule.view,
+            keeperCoreMainAssembly: keeperCoreMainAssembly,
+            coreAssembly: coreAssembly
+        )
+
+        module.output.didUpdateInputAmount = {
+            stakingDepositInputAPYModule.input.setInputAmount($0)
+        }
+
+        module.view.setupRightCloseButton { [weak self] in
+            self?.didFinish?(self)
+        }
+
+        module.output.didConfirm = { [weak self] item in
+            guard let self else { return }
+            Task {
+                await MainActor.run {
+                    self.openConfirmation(wallet: self.wallet, item: item)
+                }
+            }
+        }
+
+        module.output.didClose = { [weak self] in
+            self?.didClose?()
+        }
+
+        router.push(viewController: module.view)
+    }
+
+    @MainActor func openConfirmation(wallet: Wallet, item: StakingConfirmationItem) {
+        let coordinator = StakingConfirmationCoordinator(
+            wallet: wallet,
+            item: item,
+            initiatedBy: initiatedBy,
+            utm: utm,
+            keeperCoreMainAssembly: keeperCoreMainAssembly,
+            coreAssembly: coreAssembly,
+            router: router
+        )
+
+        coordinator.didFinish = { [weak self] in
+            self?.removeChild($0)
+        }
+
+        coordinator.didClose = { [weak self, weak coordinator] in
+            self?.didClose?()
+            self?.removeChild(coordinator)
+        }
+
+        coordinator.didRequestOpenDeposit = { [weak self] in
+            self?.didRequestOpenDeposit?()
+        }
+
+        self.confirmationCoordinator = coordinator
+
+        addChild(coordinator)
+        coordinator.start(deeplink: nil)
+    }
+}

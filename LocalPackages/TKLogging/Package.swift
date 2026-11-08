@@ -1,0 +1,26 @@
+// swift-tools-version: 6.2
+
+import PackageDescription
+
+let package = Package(
+    name: "TKLogging",
+    platforms: [
+        .iOS(.v15),
+        .macOS(.v11),
+    ],
+    products: [
+        .library(
+            name: "TKLogging",
+            targets: ["TKLogging"]
+        ),
+    ],
+    targets: [
+        .target(
+            name: "TKLogging",
+            swiftSettings: [
+                .treatAllWarnings(as: .error),
+            ]
+        ),
+    ],
+    swiftLanguageModes: [.v5]
+)

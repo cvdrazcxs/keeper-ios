@@ -1,0 +1,201 @@
+import BigInt
+import Foundation
+import TonSwift
+
+public struct ManagedBalance {
+    public let tonItems: [ProcessedBalanceTonItem]
+    public let pinnedItems: [ProcessedBalanceItem]
+    public let unpinnedItems: [ProcessedBalanceItem]
+    public let batteryBalance: BatteryBalance?
+    public let currency: Currency
+    public let date: Date
+    public let isManagable: Bool
+}
+
+@frozen public enum ManagedBalanceState {
+    case current(ManagedBalance)
+    case previous(ManagedBalance)
+
+    public var balance: ManagedBalance? {
+        switch self {
+        case let .current(balance):
+            return balance
+        case let .previous(balance):
+            return balance
+        }
+    }
+}
+
+public final class ManagedBalanceStore: Store<ManagedBalanceStore.Event, ManagedBalanceStore.State> {
+    public typealias State = [Wallet: ManagedBalanceState]
+
+    @frozen public enum Event {
+        case didUpdateManagedBalance(wallet: Wallet)
+    }
+
+    private let balanceStore: ProcessedBalanceStore
+    private let tokenManagementStore: TokenManagementStore
+
+    init(
+        balanceStore: ProcessedBalanceStore,
+        tokenManagementStore: TokenManagementStore
+    ) {
+        self.balanceStore = balanceStore
+        self.tokenManagementStore = tokenManagementStore
+        super.init(state: [:])
+        setupObservers()
+    }
+
+    override public func createInitialState() -> State {
+        let balanceStates = balanceStore.state
+        return calculateState(wallets: balanceStates.keys.map { $0 as Wallet })
+    }
+
+    private func setupObservers() {
+        balanceStore.addObserver(self) { observer, event in
+            observer.didGetBalanceStoreEvent(event)
+        }
+        tokenManagementStore.addObserver(self) { observer, event in
+            observer.didGetTokenManagementStoreEvent(event)
+        }
+    }
+
+    private func didGetBalanceStoreEvent(_ event: ProcessedBalanceStore.Event) {
+        switch event {
+        case let .didUpdateProccessedBalance(wallet):
+            updateState(wallets: [wallet])
+        }
+    }
+
+    private func didGetTokenManagementStoreEvent(_ event: TokenManagementStore.Event) {
+        switch event {
+        case let .didUpdateState(wallet):
+            updateState(wallets: [wallet])
+        }
+    }
+
+    private func updateState(wallets: [Wallet]) {
+        updateState { [weak self] state in
+            guard let self else { return nil }
+            let walletsState = calculateState(wallets: wallets)
+            let updatedState = state.merging(walletsState, uniquingKeysWith: { $1 })
+            return StateUpdate(newState: updatedState)
+        } completion: { [weak self] _ in
+            wallets.forEach { self?.sendEvent(.didUpdateManagedBalance(wallet: $0)) }
+        }
+    }
+
+    private func calculateState(wallets: [Wallet]) -> State {
+        guard !wallets.isEmpty else { return [:] }
+
+        let balanceState = self.balanceStore.state
+        let tokenManagementState = self.tokenManagementStore.state
+
+        var state = State()
+        for wallet in wallets {
+            guard let walletBalanceState = balanceState[wallet] else { continue }
+            let walletState = calculateState(
+                wallet: wallet,
+                balanceState: walletBalanceState,
+                tokenManagementState: tokenManagementState[wallet]
+            )
+            state[wallet] = walletState
+        }
+
+        return state
+    }
+
+    private func calculateState(
+        wallet: Wallet,
+        balanceState: ProcessedBalanceState,
+        tokenManagementState: TokenManagementState?
+    ) -> ManagedBalanceState? {
+        let balance = balanceState.balance
+
+        let statePinnedItems = tokenManagementState?.pinnedItems ?? []
+        let stateHiddenItems = tokenManagementState?.hiddenState ?? [:]
+
+        var tonItems = [ProcessedBalanceTonItem]()
+        var pinnedItems = [ProcessedBalanceItem]()
+        var unpinnedItems = [ProcessedBalanceItem]()
+
+        for balanceItem in balance.items {
+            if case let .ton(tonItem) = balanceItem {
+                tonItems.append(tonItem)
+            }
+            if statePinnedItems.contains(balanceItem.identifier) {
+                pinnedItems.append(balanceItem)
+            } else {
+                let isHidden = balanceItem.canHide && stateHiddenItems[balanceItem.identifier] == true
+                guard !isHidden else { continue }
+                unpinnedItems.append(balanceItem)
+            }
+        }
+
+        let sortedPinnedItems = pinnedItems.sorted {
+            guard let lIndex = statePinnedItems.firstIndex(of: $0.identifier) else {
+                return false
+            }
+            guard let rIndex = statePinnedItems.firstIndex(of: $1.identifier) else {
+                return true
+            }
+
+            return lIndex < rIndex
+        }
+
+        let sortedUnpinnedItems = unpinnedItems.sorted(by: ProcessedBalanceItem.isOrderedBeforeInBalanceList)
+
+        let managedBalance = ManagedBalance(
+            tonItems: tonItems,
+            pinnedItems: sortedPinnedItems,
+            unpinnedItems: sortedUnpinnedItems,
+            batteryBalance: balance.batteryBalance,
+            currency: balance.currency,
+            date: balance.date,
+            isManagable: (balance.jettonItems.count + balance.stakingItems.count) > 0
+                || (balance.tronUSDTItem?.amount ?? 0) > 0
+                || (balance.tronTRXItem?.amount ?? 0) > 0
+        )
+
+        switch balanceState {
+        case .current:
+            return .current(managedBalance)
+        case .previous:
+            return .previous(managedBalance)
+        }
+    }
+}
+
+extension ProcessedBalanceItem {
+    var canHide: Bool {
+        if case .ton = self { return false }
+        return true
+    }
+
+    var balanceListRank: Int {
+        switch self {
+        case .ton:
+            return 0
+        case .tronUSDT:
+            return 1
+        case let .jetton(item) where item.jetton.jettonInfo.isTonUSDT:
+            return 2
+        case .staking:
+            return 3
+        case let .jetton(item):
+            return item.jetton.jettonInfo.verification == .whitelist ? 4 : 5
+        case .tronTRX, .ethena:
+            return 4
+        }
+    }
+
+    static func isOrderedBeforeInBalanceList(_ lhs: ProcessedBalanceItem, _ rhs: ProcessedBalanceItem) -> Bool {
+        guard lhs.balanceListRank == rhs.balanceListRank else {
+            return lhs.balanceListRank < rhs.balanceListRank
+        }
+        guard lhs.converted == rhs.converted else {
+            return lhs.converted > rhs.converted
+        }
+        return lhs.identifier < rhs.identifier
+    }
+}

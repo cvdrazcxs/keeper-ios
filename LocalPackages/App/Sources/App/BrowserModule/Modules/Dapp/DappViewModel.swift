@@ -1,0 +1,536 @@
+import KeeperCore
+import TKCore
+import TKLogging
+import TKScreenKit
+import TKUIKit
+import UIKit
+
+protocol DappModuleOutput: AnyObject {
+    var didShareDappURL: ((_ dapp: Dapp, _ url: URL) -> Void)? { get set }
+    var didRequestClose: (() -> Void)? { get set }
+}
+
+protocol DappModuleInput: AnyObject {
+    func setLandscapeMode(isEnabled: Bool)
+    func sendEVMEvent(_ event: EVMProviderEvent)
+}
+
+protocol DappViewModel: AnyObject {
+    var didOpenApp: ((URL?, String?) -> Void)? { get set }
+    var injectHandler: ((String) -> Void)? { get set }
+    var currentURLProvider: (() -> URL?)? { get set }
+    var jsInjection: String? { get }
+    var walletIdentifier: String? { get }
+    var applicationNameForUserAgent: String? { get }
+    var allowsBackForwardNavigationGestures: Bool { get }
+    var didUpdateIsLandscapeEnable: (() -> Void)? { get set }
+    var isLandscapeEnable: Bool { get }
+    var didShareURLSystemShareSheet: ((URL) -> Void)? { get set }
+
+    func viewDidLoad()
+    func didChangeSystemAppearance()
+    func didCommitLoad()
+    func didTapClose()
+    func isNativeHeaderHidden(for url: URL) -> Bool
+    func didLoadInitialRequest()
+    func didFailLoad(_ failure: TKBridgeWebViewController.LoadFailure)
+    func didReceiveMessage(body: Any)
+    func copyDappURL(url: URL)
+    func shareDappURL(url: URL)
+}
+
+class DappViewModelImplementation: DappViewModel, DappModuleOutput, DappModuleInput {
+    // MARK: - DappModuleOutput
+
+    var didShareDappURL: ((_ dapp: Dapp, _ url: URL) -> Void)?
+    var didRequestClose: (() -> Void)?
+
+    // MARK: - DappModuleInput
+
+    func setLandscapeMode(isEnabled: Bool) {
+        isLandscapeEnable = isEnabled
+    }
+
+    func sendEVMEvent(_ event: EVMProviderEvent) {
+        sendNativeEvent(json: event.json)
+    }
+
+    // MARK: - DappViewModel
+
+    var didOpenApp: ((URL?, String?) -> Void)?
+    var injectHandler: ((String) -> Void)?
+    var currentURLProvider: (() -> URL?)?
+    var didUpdateIsLandscapeEnable: (() -> Void)?
+    var didShareURLSystemShareSheet: ((URL) -> Void)?
+    var isLandscapeEnable: Bool = false {
+        didSet {
+            didUpdateIsLandscapeEnable?()
+        }
+    }
+
+    func viewDidLoad() {
+        didOpenApp?(dapp.url, dapp.name)
+        didUpdateIsLandscapeEnable?()
+        observeTheme()
+    }
+
+    func didChangeSystemAppearance() {
+        deliverThemeIfNeeded()
+    }
+
+    func didCommitLoad() {
+        deliveredTheme = injectedTheme
+        deliverThemeIfNeeded()
+    }
+
+    func didTapClose() {
+        didRequestClose?()
+    }
+
+    func isNativeHeaderHidden(for url: URL) -> Bool {
+        earnDappMatcher.matches(url: url)
+    }
+
+    var walletIdentifier: String? {
+        wallet?.id
+    }
+
+    var applicationNameForUserAgent: String? {
+        earnDappMatcher.matches(url: dapp.url) ? userAgent : nil
+    }
+
+    var allowsBackForwardNavigationGestures: Bool {
+        earnDappMatcher.matches(url: dapp.url)
+    }
+
+    private var evmProviderInjection: String {
+        guard let address = wallet?.walletConnectAddress(for: .eth) else {
+            return ""
+        }
+        return EVMProviderBridge.injection(
+            address: address,
+            chainIdHex: EVMProviderBridge.chainIdHex(WalletConnectChain.eth.eip155ChainId.map(Int.init) ?? 1)
+        )
+    }
+
+    func didLoadInitialRequest() {
+        analyticsSession.logLoaded()
+        reconnectIfNeeded()
+    }
+
+    func didFailLoad(_ failure: TKBridgeWebViewController.LoadFailure) {
+        analyticsSession.logLoadFailed(errorCode: failure.errorCode, httpStatus: failure.httpStatus)
+    }
+
+    func reconnectIfNeeded() {
+        messageHandler.reconnectIfNeeded(dapp: dapp) { [weak self] result in
+            switch result {
+            case let .success(data):
+                guard let string = String(data: data, encoding: .utf8) else {
+                    return
+                }
+                let response = DappBridgeResponse(
+                    invocationId: "",
+                    status: .fulfilled,
+                    data: .data(string)
+                )
+                self?.sendResponse(response)
+            case .failed, .rejected:
+                break
+            }
+        }
+    }
+
+    func didReceiveMessage(body: Any) {
+        Log.d("didReceiveMessage\(body)")
+        guard let string = body as? String,
+              let data = string.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String,
+              let messageType = DappBridgeMessageType(rawValue: type),
+              messageType == .invokeRnFunc,
+              let name = json["name"] as? String,
+              let invocationId = json["invocationId"] as? String,
+              let args = json["args"] as? [Any]
+        else {
+            return
+        }
+
+        guard let functionType = DappBridgeFunctionType(rawValue: name),
+              !functionType.isNativeBridge || isEarnDapp
+        else {
+            sendResponse(
+                DappBridgeResponse(
+                    invocationId: invocationId,
+                    status: .rejected,
+                    data: .nativeError(
+                        code: DappNativeBridge.ErrorCode.unsupportedMethod.rawValue,
+                        message: DappNativeBridge.ErrorMessage.unsupportedMethod
+                    )
+                )
+            )
+            return
+        }
+
+        let message = DappFunctionInvokeMessage(
+            type: functionType,
+            invocationId: invocationId,
+            args: args
+        )
+
+        messageHandler.handleFunctionInvokeMessage(message, dapp: dapp) { [weak self] result in
+            switch result {
+            case let .success(data):
+                guard let string = String(data: data, encoding: .utf8) else {
+                    return
+                }
+                let response = DappBridgeResponse(
+                    invocationId: message.invocationId,
+                    status: .fulfilled,
+                    data: .data(string)
+                )
+                self?.sendResponse(response)
+            case let .failed(error):
+                let response = DappBridgeResponse(
+                    invocationId: message.invocationId,
+                    status: .rejected,
+                    data: .error(error)
+                )
+                self?.sendResponse(response)
+            case let .rejected(code, errorMessage):
+                let response = DappBridgeResponse(
+                    invocationId: message.invocationId,
+                    status: .rejected,
+                    data: .nativeError(code: code, message: errorMessage)
+                )
+                self?.sendResponse(response)
+            }
+        }
+    }
+
+    func copyDappURL(url: URL) {
+        let resultUrl = if explorerURLMatcher.matches(url: url) {
+            url
+        } else {
+            updateURLForCopyAndShare(url: url)
+        }
+        Pasteboard.copy(value: resultUrl.absoluteString)
+        analyticsSession.logSharingCopy(from: .copyLink)
+    }
+
+    func shareDappURL(url: URL) {
+        if explorerURLMatcher.matches(url: url) {
+            didShareURLSystemShareSheet?(url)
+            analyticsSession.logSharingCopy(from: .share)
+        } else {
+            let url = updateURLForCopyAndShare(url: url)
+            didShareDappURL?(dapp, url)
+        }
+    }
+
+    let dapp: Dapp
+    let messageHandler: DappMessageHandler
+
+    private let analyticsSession: DappOpenAnalyticsSession
+    private let wallet: Wallet?
+    private let isSignMessageSupported: Bool
+    private let explorerURLMatcher: BlockchainExplorerURLMatcher
+    private let earnDappMatcher = EarnDappMatcher()
+    private let earnFeaturedVaultsRepository: EarnFeaturedVaultsRepository
+    private let userAgent: String
+
+    private var deliveredTheme: String?
+    private var injectedTheme: String?
+
+    /// `window.native` and the coordinator's Earn session exist only for a dapp opened on an Earn host,
+    /// so a page that navigated onto one is refused like any other.
+    private var isEarnDapp: Bool {
+        earnDappMatcher.matches(url: dapp.url)
+            && earnDappMatcher.matches(url: currentURLProvider?() ?? dapp.url)
+    }
+
+    init(
+        dapp: Dapp,
+        analyticsSession: DappOpenAnalyticsSession,
+        messageHandler: DappMessageHandler,
+        wallet: Wallet?,
+        isSignMessageSupported: Bool,
+        explorerURLMatcher: BlockchainExplorerURLMatcher,
+        earnFeaturedVaultsRepository: EarnFeaturedVaultsRepository,
+        userAgent: String
+    ) {
+        self.dapp = dapp
+        self.analyticsSession = analyticsSession
+        self.messageHandler = messageHandler
+        self.wallet = wallet
+        self.isSignMessageSupported = isSignMessageSupported
+        self.explorerURLMatcher = explorerURLMatcher
+        self.earnFeaturedVaultsRepository = earnFeaturedVaultsRepository
+        self.userAgent = userAgent
+    }
+
+    private func observeTheme() {
+        deliveredTheme = DappNativeBridge.theme
+        TKThemeManager.shared.addEventObserver(self) { observer, _ in
+            observer.deliverThemeIfNeeded()
+        }
+    }
+
+    private func deliverThemeIfNeeded() {
+        let theme = DappNativeBridge.theme
+        guard theme != deliveredTheme else { return }
+        deliveredTheme = theme
+        sendNativeEvent(
+            json: DappNativeBridge.eventJson(
+                name: DappNativeBridge.Event.themeChanged.rawValue,
+                payload: DappNativeBridge.ThemePayload(theme: theme)
+            )
+        )
+    }
+
+    private func sendNativeEvent(json eventJson: String?) {
+        guard isEarnDapp, let eventJson else {
+            return
+        }
+        let js = """
+        (function() {
+            window.dispatchEvent(new MessageEvent('message', {
+                data: \(eventJson)
+            }));
+        })();
+        """
+        injectHandler?(js)
+    }
+
+    private func sendResponse(_ response: DappBridgeResponse) {
+        guard let responseJson = response.json else { return }
+        let js = """
+        (function() {
+            window.dispatchEvent(new MessageEvent('message', {
+                data: \(responseJson)
+            }));
+        })();
+        """
+        injectHandler?(js)
+    }
+
+    var jsInjection: String? {
+        let deviceInfo = TonConnect.DeviceInfo(
+            maxMessages: (try? wallet?.contract.maxMessages) ?? 4,
+            appVersion: InfoProvider.appVersion(),
+            isSignMessageSupported: isSignMessageSupported
+        )
+        let info = Info(
+            isWalletBrowser: true,
+            deviceInfo: deviceInfo,
+            protocolVersion: 2
+        )
+
+        let theme = TKThemeManager.shared.theme.stringDescription
+
+        let nativeConfig = DappNativeBridge.Config.current(featuredVaults: earnFeaturedVaultsRepository.featuredVaults())
+        injectedTheme = nativeConfig.theme
+        let isEarnHost = earnDappMatcher.matches(url: dapp.url)
+        let nativeInjection = isEarnHost
+            ? DappNativeBridge.injection(config: nativeConfig)
+            : ""
+        let evmInjection = isEarnHost ? evmProviderInjection : ""
+
+        guard let infoData = try? JSONEncoder().encode(info),
+              var infoString = String(data: infoData, encoding: .utf8) else { return nil }
+        infoString = String(describing: infoString).replacingOccurrences(of: "\\", with: "")
+        return """
+                (() => {
+                                if (!window.tonapi) {
+                                  window.tonapi = {
+                                    fetch: async (url, options) => {
+                                      return new Promise((resolve, reject) => {
+                                        window.invokeRnFunc('tonapi.fetch', [url, options], (result) => {
+                                          try {
+                                            const headers = new Headers(result.headers);
+                                            const response = new Response(result.body, {
+                                              status: result.status,
+                                              statusText: result.statusText,
+                                              headers: headers
+                                            });
+                                            resolve(response);
+                                          } catch (e) {
+                                            reject(e);
+                                          }
+                                        }, reject)
+                                      });
+                                    }
+                                  };
+                                }
+                                if (!window.\(String.windowKey)) {
+                                    window.rnPromises = {};
+                                    window.rnEventListeners = [];
+                                    window.invokeRnFunc = (name, args, resolve, reject) => {
+                                        const invocationId = btoa(Math.random()).substring(0, 12);
+                                        const timeoutMs = null;
+                                        const timeoutId = timeoutMs ? setTimeout(() => reject(new Error('bridge timeout for function with name: '+name+'')), timeoutMs) : null;
+                                        window.rnPromises[invocationId] = { resolve, reject, timeoutId }
+                                        window.webkit.messageHandlers.dapp.postMessage(JSON.stringify({
+                                            type: '\(DappBridgeMessageType.invokeRnFunc.rawValue)',
+                                            invocationId: invocationId,
+                                            name,
+                                            args,
+                                        }));
+                                    };
+                                    
+                                    window.addEventListener('message', ({ data }) => {
+                                        try {
+                                            const message = data;
+                                            console.log('message bridge', JSON.stringify(message));
+                                            if (message.type === '\(DappBridgeMessageType.functionResponse.rawValue)') {
+                                                const promise = window.rnPromises[message.invocationId];
+                                                
+                                                if (!promise) {
+                                                    return;
+                                                }
+                                                
+                                                if (promise.timeoutId) {
+                                                    clearTimeout(promise.timeoutId);
+                                                }
+                                                console.log(message)
+                                                
+                                                if (message.status === 'fulfilled') {
+                                                    let messageData = JSON.parse(message.data);
+
+                                                    promise.resolve(messageData);
+                                                } else if (message.data && typeof message.data === 'object') {
+                                                    promise.reject(Object.assign(new Error(message.data.message), { code: message.data.code }));
+                                                } else {
+                                                    promise.reject(new Error(message.data));
+                                                }
+                                                
+                                                delete window.rnPromises[message.invocationId];
+                                            }
+                                            
+                                            if (message.type === '\(DappBridgeMessageType.event.rawValue)') {
+                                                window.rnEventListeners.forEach((listener) => listener(message.event));
+                                            }
+                                        } catch { }
+                                    });
+                                }
+                                
+                                const listen = (cb) => {
+                                    window.rnEventListeners.push(cb);
+                                    return () => {
+                                        const index = window.rnEventListeners.indexOf(cb);
+                                        if (index > -1) {
+                                            window.rnEventListeners.splice(index, 1);
+                                        }
+                                    };
+                                };
+                                
+                                window.\(String.windowKey) = {
+                                    theme: "\(theme)",
+                                    unlockOrientation: () => new Promise((resolve, reject) => window.invokeRnFunc('unlockOrientation', [], resolve, reject)),
+                                    lockOrientation: () => new Promise((resolve, reject) => window.invokeRnFunc('lockOrientation', [], resolve, reject)),
+                                    tonconnect: Object.assign(\(infoString),{ send: (...args) => {return new Promise((resolve, reject) => window.invokeRnFunc('send', args, resolve, reject))},connect: (...args) => {return new Promise((resolve, reject) => window.invokeRnFunc('connect', args, resolve, reject))},restoreConnection: (...args) => {return new Promise((resolve, reject) => window.invokeRnFunc('restoreConnection', args, resolve, reject))},disconnect: (...args) => {return new Promise((resolve, reject) => window.invokeRnFunc('disconnect', args, resolve, reject))} },{ listen }),
+                                }
+
+                                \(nativeInjection)
+
+                                \(evmInjection)
+                            })();
+        """
+    }
+
+    private func updateURLForCopyAndShare(url: URL) -> URL {
+        let urlEncoded: (URL) -> String? = {
+            guard let percenEncodingRemoved = $0
+                .absoluteString
+                .replacingOccurrences(of: "%25", with: "%")
+                .removingPercentEncoding
+            else {
+                return nil
+            }
+            let set = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+            return (percenEncodingRemoved as NSString).addingPercentEncoding(withAllowedCharacters: set)
+        }
+
+        guard let encoded = urlEncoded(url) else { return url }
+        guard let updatedUrl = URL(string: "https://app.tonkeeper.com/dapp/\(encoded)") else { return url }
+        return updatedUrl
+    }
+}
+
+private struct Info: Encodable {
+    let isWalletBrowser: Bool
+    let deviceInfo: TonConnect.DeviceInfo
+    let protocolVersion: Int
+}
+
+struct DappFunctionInvokeMessage {
+    let type: DappBridgeFunctionType
+    let invocationId: String
+    let args: [Any]
+}
+
+struct DappBridgeResponse {
+    enum Status: String {
+        case fulfilled
+        case rejected
+    }
+
+    enum Data {
+        case data(String)
+        case error(Int)
+        case nativeError(code: Int, message: String)
+    }
+
+    let invocationId: String
+    let status: Status
+    let data: Data
+
+    var json: String? {
+        var dictionary: [String: Any] = ["invocationId": invocationId,
+                                         "status": status.rawValue,
+                                         "type": "functionResponse"]
+        switch data {
+        case let .data(data):
+            dictionary["data"] = data
+        case let .error(error):
+            dictionary["data"] = error
+        case let .nativeError(code, message):
+            dictionary["data"] = ["code": code, "message": message]
+        }
+        return dictionary.asJsonString()
+    }
+}
+
+enum DappBridgeMessageType: String, Codable {
+    case invokeRnFunc
+    case functionResponse
+    case event
+    case nativeEvent
+}
+
+enum DappBridgeFunctionType: String, Codable {
+    case send
+    case ethRequest = "eth.request"
+    case uiNavigateBack = "ui.navigateBack"
+    case uiClose = "ui.close"
+    case analyticsTrack = "analytics.track"
+    case connect
+    case restoreConnection
+    case disconnect
+    case tonapiFetch = "tonapi.fetch"
+    case unlockOrientation
+    case lockOrientation
+
+    var isNativeBridge: Bool {
+        switch self {
+        case .uiNavigateBack, .uiClose, .analyticsTrack, .ethRequest:
+            return true
+        case .send, .connect, .restoreConnection, .disconnect, .tonapiFetch, .unlockOrientation, .lockOrientation:
+            return false
+        }
+    }
+}
+
+private extension String {
+    static let windowKey = "tonkeeper"
+}

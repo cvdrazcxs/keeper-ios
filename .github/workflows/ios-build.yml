@@ -1,0 +1,99 @@
+name: iOS build (unsigned .ipa)
+
+# Ручной запуск из вкладки Actions. Собирает беззнаковый .ipa под устройство
+# (arm64) — его потом подписывает и ставит Sideloadly с Apple ID пользователя.
+# macOS-раннеры в публичных репозиториях бесплатны и не списывают минуты.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Keeper.app (device, unsigned)
+    runs-on: macos-15
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Firebase-конфиг лежит у Tonkeeper в приватном репо ios_keys; в форке
+      # вместо него — технические заглушки (мини-валидные plists), чтобы
+      # прошла build-фаза «Firebase plist». Пуш-уведомления/Crashlytics при
+      # этом не работают, реальный конфиг можно подложить потом.
+      - name: Create dummy Firebase configs
+        run: |
+          mkdir -p "Keeper/Resources/Firebase/Keeper" \
+                   "Keeper/Resources/Firebase/KeeperDev" \
+                   "Keeper/Resources/Firebase/KeeperUK"
+          write_plist() {
+            cat > "Keeper/Resources/Firebase/$1/GoogleService-Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>BUNDLE_ID</key><string>com.example.keeper.dummy</string>
+            <key>PROJECT_ID</key><string>dummy-project</string>
+            <key>API_KEY</key><string>AIza-DUMMY-KEY</string>
+            <key>GCM_SENDER_ID</key><string>123456789000</string>
+          </dict>
+          </plist>
+          EOF
+          }
+          for folder in Keeper KeeperDev KeeperUK; do write_plist "$folder"; done
+
+      # Реплицирует prepare-шаг их make compile без xcbeautify и без
+      # make setup (на CI toolchain-установщики пропускаются сами).
+      - name: Prepare build dir
+        run: |
+          mkdir -p build/SourcePackages
+          sh scripts/setup_build_credentials.sh "$PWD/build"
+
+      - name: xcodebuild (device, codesign off)
+        run: |
+          set -o pipefail
+          export CLONED_SOURCE_PACKAGES_DIR="$PWD/build/SourcePackages"
+          export XCODE_XCCONFIG_FILE="$PWD/Configurations/PackageBuildSettings.xcconfig"
+          export GIT_CONFIG_GLOBAL="$PWD/build/git-config"
+          xcodebuild \
+            -project Keeper.xcodeproj \
+            -scheme Keeper \
+            -configuration KeeperDebug \
+            -destination 'generic/platform=iOS' \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CLANG_MODULE_CACHE_PATH="$HOME/Library/Developer/Xcode/DerivedData/ModuleCache.noindex" \
+            -derivedDataPath "$PWD/build/DerivedData" \
+            -clonedSourcePackagesDirPath "$PWD/build/SourcePackages" \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          set -e
+          APP=$(find build/DerivedData/Build/Products -type d -maxdepth 3 -name "Keeper.app" | head -n 1)
+          [ -n "$APP" ] || { echo "Keeper.app not found"; ls -R build/DerivedData/Build/Products | head -50; exit 1; }
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/Keeper.app
+          (cd build/ipa && zip -q -r ../Keeper-unsigned.ipa Payload)
+          ls -lh build/Keeper-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Keeper-unsigned-ipa
+          path: build/Keeper-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

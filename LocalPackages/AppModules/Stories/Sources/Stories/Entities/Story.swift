@@ -1,0 +1,95 @@
+import Foundation
+import KeeperCore
+
+public struct Story: Decodable, Equatable {
+    public struct Page: Decodable, Equatable {
+        public struct Button: Decodable, Equatable {
+            public enum ButtonType: String, Decodable {
+                case deeplink
+                case link
+            }
+
+            public let title: String
+            public let payload: String
+            public let type: ButtonType
+
+            public init(title: String, payload: String, type: ButtonType) {
+                self.title = title
+                self.payload = payload
+                self.type = type
+            }
+        }
+
+        public struct Link: Decodable, Equatable {
+            public let text: String
+            public let url: URL
+        }
+
+        public let title: String
+        public let description: String
+        public let image: URL?
+        public let button: Button?
+        public let links: [Link]
+
+        public init(title: String, description: String, image: URL?, button: Button?, links: [Link] = []) {
+            self.title = title
+            self.description = description
+            self.image = image
+            self.button = button
+            self.links = links
+        }
+    }
+
+    public let id: String
+    public let pages: [Page]
+    public let isAutoShow: Bool
+
+    public init(id: String, pages: [Page], isAutoShow: Bool = false) {
+        self.id = id
+        self.pages = pages
+        self.isAutoShow = isAutoShow
+    }
+
+    public init(id: String, story: KeeperCore.Story) {
+        self.id = id
+        self.pages = story.pages.map { Story.Page(page: $0) }
+        self.isAutoShow = story.isAutoShow
+    }
+}
+
+extension Story.Page.Button.ButtonType {
+    init(buttonType: KeeperCore.Story.Page.Button.ButtonType) {
+        switch buttonType {
+        case .deeplink:
+            self = .deeplink
+        case .link:
+            self = .link
+        }
+    }
+}
+
+extension Story.Page.Button {
+    init(button: KeeperCore.Story.Page.Button) {
+        self.title = button.title
+        self.payload = button.payload
+        self.type = Story.Page.Button.ButtonType(buttonType: button.type)
+    }
+}
+
+extension Story.Page {
+    init(page: KeeperCore.Story.Page) {
+        self.title = page.title
+        self.description = page.description
+        self.image = page.image
+        self.button = {
+            if let pageButton = page.button {
+                return Story.Page.Button(button: pageButton)
+            } else {
+                return nil
+            }
+        }()
+        self.links = (page.links ?? []).compactMap { link in
+            URL(string: link.url).map { Story.Page.Link(text: link.text, url: $0) }
+        }
+    }
+}

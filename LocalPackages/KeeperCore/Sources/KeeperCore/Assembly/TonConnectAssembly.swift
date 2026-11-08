@@ -1,0 +1,90 @@
+import Foundation
+
+public final class TonConnectAssembly {
+    let repositoriesAssembly: RepositoriesAssembly
+    let servicesAssembly: ServicesAssembly
+    let storesAssembly: StoresAssembly
+    let apiAssembly: APIAssembly
+    let coreAssembly: CoreAssembly
+    let formattersAssembly: FormattersAssembly
+    let secureAssembly: SecureAssembly
+    public let isSignMessageEnabled: Bool
+
+    init(
+        repositoriesAssembly: RepositoriesAssembly,
+        servicesAssembly: ServicesAssembly,
+        storesAssembly: StoresAssembly,
+        apiAssembly: APIAssembly,
+        coreAssembly: CoreAssembly,
+        formattersAssembly: FormattersAssembly,
+        secureAssembly: SecureAssembly,
+        isSignMessageEnabled: Bool
+    ) {
+        self.repositoriesAssembly = repositoriesAssembly
+        self.servicesAssembly = servicesAssembly
+        self.storesAssembly = storesAssembly
+        self.apiAssembly = apiAssembly
+        self.coreAssembly = coreAssembly
+        self.formattersAssembly = formattersAssembly
+        self.secureAssembly = secureAssembly
+        self.isSignMessageEnabled = isSignMessageEnabled
+    }
+
+    func tonConnectRepository() -> TonConnectRepository {
+        TonConnectRepositoryImplementation(fileSystemVault: coreAssembly.fileSystemVault())
+    }
+
+    public func tonConnectService() -> TonConnectService {
+        TonConnectServiceImplementation(
+            urlSession: .shared,
+            tonConnectBridgeAPIClientProvider: apiAssembly.tonConnectBridgeAPIClientProvider,
+            tonConnectAppsVault: coreAssembly.tonConnectAppsVault(),
+            tonConnectRepository: tonConnectRepository(),
+            walletBalanceRepository: repositoriesAssembly.walletBalanceRepository(),
+            sendService: servicesAssembly.sendService(),
+            isSignMessageEnabled: isSignMessageEnabled
+        )
+    }
+
+    private weak var _tonConnectConnectionMetadataStore: TonConnectConnectionMetadataStore?
+    public var tonConnectConnectionMetadataStore: TonConnectConnectionMetadataStore {
+        if let tonConnectConnectionMetadataStore = _tonConnectConnectionMetadataStore {
+            return tonConnectConnectionMetadataStore
+        } else {
+            let tonConnectConnectionMetadataStore = TonConnectConnectionMetadataStore(
+                vault: coreAssembly.sharedFileSystemVault()
+            )
+            _tonConnectConnectionMetadataStore = tonConnectConnectionMetadataStore
+            return tonConnectConnectionMetadataStore
+        }
+    }
+
+    private weak var _tonConnectAppsStore: TonConnectAppsStore?
+    public var tonConnectAppsStore: TonConnectAppsStore {
+        if let tonConnectAppsStore = _tonConnectAppsStore {
+            return tonConnectAppsStore
+        } else {
+            let tonConnectAppsStore = TonConnectAppsStore(
+                tonConnectService: tonConnectService(),
+                connectionMetadataStore: tonConnectConnectionMetadataStore
+            )
+            _tonConnectAppsStore = tonConnectAppsStore
+            return tonConnectAppsStore
+        }
+    }
+
+    private weak var _tonConnectEventsStore: TonConnectEventsStore?
+    var tonConnectEventsStore: TonConnectEventsStore {
+        if let tonConnectEventsStore = _tonConnectEventsStore {
+            return tonConnectEventsStore
+        } else {
+            let tonConnectEventsStore = TonConnectEventsStore(
+                tonConnectBridgeAPIClientProvider: apiAssembly.tonConnectBridgeAPIClientProvider,
+                walletsStore: storesAssembly.walletsStore,
+                tonConnectAppsStore: tonConnectAppsStore
+            )
+            _tonConnectEventsStore = tonConnectEventsStore
+            return tonConnectEventsStore
+        }
+    }
+}

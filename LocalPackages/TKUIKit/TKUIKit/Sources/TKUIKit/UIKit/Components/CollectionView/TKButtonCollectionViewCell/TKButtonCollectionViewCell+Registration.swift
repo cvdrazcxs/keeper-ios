@@ -1,0 +1,3 @@
+import UIKit
+
+typealias TKButtonCollectionViewCellRegistration = UICollectionView.CellRegistration<TKButtonCollectionViewCell, TKButtonCollectionViewCell.Configuration>

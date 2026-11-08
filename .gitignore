@@ -1,0 +1,51 @@
+## User settings
+xcuserdata/
+
+## XCode
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+DerivedData/
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Firebase config
+Keeper/Resources/Firebase/
+
+## Modules
+LocalPackages/**/Package.resolved
+resources/Package.resolved
+
+## Build output
+build/
+.build
+
+## macOS / tooling leftovers
+.DS_Store
+__pycache__/
+
+## Locally generated sourcekit-lsp config (machine-specific SDK paths)
+.sourcekit-lsp/
+
+## Maestro QA: local-only material, never pushed (see .agents/skills/tk-qa-verify)
+maestro_ui_tests/flows/local/
+maestro_ui_tests/flows/.suite/
+maestro_ui_tests/mocks/scenarios/
+maestro_ui_tests/mocks/_recorded/
+maestro_ui_tests/secrets/*
+!maestro_ui_tests/secrets/wallets.env.example
+**/.swiftpm/xcode/

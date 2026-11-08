@@ -1,0 +1,147 @@
+import Foundation
+import TonSwift
+
+public protocol WalletNFTStoreObserver: AnyObject {
+    func didUpdateNFTs(_ nfts: WalletNFTs)
+    func didUpdateLoadingState(_ loadingState: WalletNFTStore.LoadingState)
+}
+
+public extension WalletNFTStoreObserver {
+    func didUpdateNFTs(_ nfts: WalletNFTs) {}
+    func didUpdateLoadingState(_ loadingState: WalletNFTStore.LoadingState) {}
+}
+
+private struct WeakWalletNFTStoreObserver {
+    weak var observer: WalletNFTStoreObserver?
+}
+
+public actor WalletNFTStore {
+    public struct State {
+        public let loadingState: LoadingState
+        public let nfts: WalletNFTs
+    }
+
+    @frozen public enum LoadingState {
+        case idle
+        case loading
+    }
+
+    public nonisolated let state: StoreState<State>
+
+    private var _state: State {
+        get { state.value }
+        set {
+            let oldValue = state.value
+            state.value = newValue
+            if oldValue.nfts != newValue.nfts {
+                observers.forEach { $0.observer?.didUpdateNFTs(newValue.nfts) }
+            }
+            if oldValue.loadingState != newValue.loadingState {
+                observers.forEach { $0.observer?.didUpdateLoadingState(newValue.loadingState) }
+            }
+        }
+    }
+
+    private var observers = [WeakWalletNFTStoreObserver]()
+    private var loadingTask: Task<WalletNFTs?, Never>?
+
+    private nonisolated let wallet: Wallet
+    private let repository: WalletNFTsRepository
+    private let nftManagementStore: WalletNFTsManagementStore
+    private let nftsService: AccountNFTService
+
+    init(
+        wallet: Wallet,
+        repository: WalletNFTsRepository,
+        nftManagementStore: WalletNFTsManagementStore,
+        nftsService: AccountNFTService
+    ) {
+        self.wallet = wallet
+        self.repository = repository
+        self.nftManagementStore = nftManagementStore
+        self.nftsService = nftsService
+
+        state = StoreState(
+            value: State(
+                loadingState: .idle,
+                nfts: .empty
+            ),
+            initialState: {
+                State(
+                    loadingState: .idle,
+                    nfts: repository.get(wallet: wallet)
+                )
+            }
+        )
+
+        nftManagementStore.addObserver(self) { observer, event in
+            switch event {
+            case let .didUpdateState(wallet):
+                guard wallet == observer.wallet else { return }
+                Task {
+                    await observer.didUpdateNFTsManagementStoreState()
+                }
+            }
+        }
+    }
+
+    public func addObserver(_ observer: WalletNFTStoreObserver, notifyOnAdd: Bool = true) {
+        let observers = self.observers.filter { $0.observer != nil }
+        self.observers = observers + CollectionOfOne(
+            WeakWalletNFTStoreObserver(
+                observer: observer
+            )
+        )
+        if notifyOnAdd {
+            self.observers.forEach { $0.observer?.didUpdateNFTs(state.value.nfts) }
+            self.observers.forEach { $0.observer?.didUpdateLoadingState(state.value.loadingState) }
+        }
+    }
+
+    @discardableResult
+    public func loadNFTs() async -> WalletNFTs {
+        if let loadingTask {
+            return await loadingTask.value ?? _state.nfts
+        } else {
+            let task = Task<WalletNFTs?, Never> {
+                do {
+                    let loadedNFTs = try await nftsService.loadAccountNFTs(
+                        wallet: wallet,
+                        collectionAddress: nil,
+                        limit: nil,
+                        offset: nil,
+                        isIndirectOwnership: true
+                    )
+                    return handleNFTs(loadedNFTs)
+                } catch {
+                    return nil
+                }
+            }
+            self.loadingTask = task
+
+            _state = State(
+                loadingState: .loading,
+                nfts: _state.nfts
+            )
+
+            let loadedNFTs = await task.value
+            self.loadingTask = nil
+            guard !Task.isCancelled, let loadedNFTs else {
+                _state = State(loadingState: .idle, nfts: _state.nfts)
+                return _state.nfts
+            }
+            try? self.repository.save(nfts: loadedNFTs, wallet: wallet)
+            _state = State(loadingState: .idle, nfts: loadedNFTs)
+            return loadedNFTs
+        }
+    }
+
+    private func didUpdateNFTsManagementStoreState() {
+        let nfts = handleNFTs(state.value.nfts.all)
+        _state = State(loadingState: _state.loadingState, nfts: nfts)
+    }
+
+    private func handleNFTs(_ nfts: [NFT]) -> WalletNFTs {
+        WalletNFTs.grouped(nfts: nfts, managementState: nftManagementStore.state)
+    }
+}

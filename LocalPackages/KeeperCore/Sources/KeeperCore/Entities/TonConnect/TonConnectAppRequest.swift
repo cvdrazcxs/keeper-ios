@@ -1,0 +1,101 @@
+import Foundation
+import TonSwift
+
+enum AppRequestError: Swift.Error {
+    case unknownMethod(method: String)
+    case noParams
+}
+
+public extension TonConnect {
+    struct SendTransactionRequest: Decodable {
+        public let params: [SignRawRequest]
+        public let id: String
+
+        public init(params: [SignRawRequest], id: String) {
+            self.params = params
+            self.id = id
+        }
+    }
+
+    struct SignDataRequest: Decodable {
+        public let params: TonConnectSignDataPayload
+        public let id: String
+
+        public init(params: TonConnectSignDataPayload, id: String) {
+            self.params = params
+            self.id = id
+        }
+    }
+
+    struct SignMessageRequest: Decodable {
+        public let params: SignRawRequest
+        public let id: String
+
+        public init(params: SignRawRequest, id: String) {
+            self.params = params
+            self.id = id
+        }
+    }
+
+    struct DisconnectRequest: Decodable {
+        public let id: String
+
+        public init(id: String) {
+            self.id = id
+        }
+    }
+
+    @frozen enum AppRequest: Decodable {
+        case sendTransaction(SendTransactionRequest)
+        case signData(SignDataRequest)
+        case signMessage(SignMessageRequest)
+        case disconnect(DisconnectRequest)
+
+        enum CodingKeys: String, CodingKey {
+            case method
+            case params
+            case id
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let method = try container.decode(String.self, forKey: .method)
+            let id = try container.decode(String.self, forKey: .id)
+
+            switch method {
+            case "sendTransaction":
+                let paramsArray = try container.decode([String].self, forKey: .params)
+                let jsonDecoder = JSONDecoder()
+                let signRawRequests = paramsArray.compactMap { (string: String) -> SignRawRequest? in
+                    guard let data = string.data(using: .utf8) else { return nil }
+                    return try? jsonDecoder.decode(SignRawRequest.self, from: data)
+                }
+                self = .sendTransaction(SendTransactionRequest(params: signRawRequests, id: id))
+
+            case "signData":
+                let paramsArray = try container.decode([String].self, forKey: .params)
+                let jsonDecoder = JSONDecoder()
+
+                guard let param = paramsArray.first?.data(using: .utf8) else {
+                    throw AppRequestError.noParams
+                }
+                let params = try jsonDecoder.decode(TonConnectSignDataPayload.self, from: param)
+                self = .signData(SignDataRequest(params: params, id: id))
+
+            case "signMessage":
+                let paramsArray = try container.decode([String].self, forKey: .params)
+                guard let param = paramsArray.first?.data(using: .utf8) else {
+                    throw AppRequestError.noParams
+                }
+                let params = try JSONDecoder().decode(SignRawRequest.self, from: param)
+                self = .signMessage(SignMessageRequest(params: params, id: id))
+
+            case "disconnect":
+                self = .disconnect(DisconnectRequest(id: id))
+
+            default:
+                throw AppRequestError.unknownMethod(method: method)
+            }
+        }
+    }
+}

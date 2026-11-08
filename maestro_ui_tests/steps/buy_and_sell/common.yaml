@@ -1,0 +1,4 @@
+appId: com.jbig.tonkeeper.dev
+---
+- launchApp:
+    clearState: true

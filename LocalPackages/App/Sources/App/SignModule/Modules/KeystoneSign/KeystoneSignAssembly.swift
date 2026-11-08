@@ -1,0 +1,40 @@
+import Foundation
+import KeeperCore
+import TKCore
+import TKUIKit
+import URKit
+
+struct KeystoneSignAssembly {
+    private init() {}
+    static func module(
+        transaction: UR,
+        wallet: Wallet,
+        assembly: KeeperCore.MainAssembly,
+        coreAssembly: TKCore.CoreAssembly
+    ) -> MVVMModule<KeystoneSignViewController, KeystoneSignModuleOutput, KeystoneSignModuleInput> {
+        let scannerModule = ScannerModule(
+            dependencies: ScannerModule.Dependencies(
+                coreAssembly: coreAssembly,
+                scannerAssembly: assembly.scannerAssembly()
+            )
+        ).createScannerModule(
+            configurator: KeystoneSignControllerConfigurator(
+                deeplinkParser: assembly.deeplinkParser
+            ),
+            uiConfiguration: ScannerUIConfiguration(
+                title: nil,
+                subtitle: nil,
+                isFlashlightVisible: false
+            )
+        )
+
+        let viewModel = KeystoneSignViewModelImplementation(
+            keystoneSignController: assembly.keystoneSignController(transaction: transaction, wallet: wallet),
+            qrCodeGenerator: assembly.coreAssembly
+                .qrCodeGenerator(persistent: false),
+            scannerOutput: scannerModule.output
+        )
+        let viewController = KeystoneSignViewController(viewModel: viewModel, scannerViewController: scannerModule.view)
+        return .init(view: viewController, output: viewModel, input: viewModel)
+    }
+}
