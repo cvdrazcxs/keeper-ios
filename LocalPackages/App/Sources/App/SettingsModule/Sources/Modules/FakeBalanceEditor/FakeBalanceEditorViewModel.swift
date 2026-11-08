@@ -36,6 +36,13 @@ final class FakeBalanceEditorViewModel: ObservableObject {
         self.managedBalanceStore = managedBalanceStore
         self.appSettings = appSettings
 
+        // Initialize all stored properties before calling instance methods
+        // (Swift forbids using self until every stored property is initialized).
+        tokenOptions = []
+        amountText = ""
+        selectedTokenID = nil
+        externalOption = nil
+
         tokenOptions = buildOptions()
         amountText = appSettings.fakeBalanceAmount ?? ""
         if let savedSymbol = appSettings.fakeBalanceSymbol,
