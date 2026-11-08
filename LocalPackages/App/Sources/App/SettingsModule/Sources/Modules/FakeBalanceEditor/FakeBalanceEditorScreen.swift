@@ -86,7 +86,7 @@ private extension FakeBalanceEditorScreen {
             Spacer(minLength: 8)
 
             if viewModel.selectedTokenID == option.id {
-                Image(systemName: "checkmark.circle.fill")
+                SwiftUI.Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 20))
                     .foregroundStyle(Color.accentColor)
             }
