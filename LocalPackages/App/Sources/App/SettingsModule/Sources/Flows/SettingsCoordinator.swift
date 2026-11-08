@@ -312,12 +312,50 @@ private extension SettingsCoordinator {
     }
 
     func openFakeBalanceEditor() {
-        let viewController = FakeBalanceEditorAssembly.module(
+        let module = FakeBalanceEditorAssembly.module(
             wallet: wallet,
             managedBalanceStore: keeperCoreMainAssembly.storesAssembly.managedBalanceStore,
             appSettings: coreAssembly.appSettings
         )
-        router.push(viewController: viewController)
+        module.viewModel.didRequestOpenCatalogPicker = { [weak self, weak viewModel = module.viewModel] in
+            guard let self, let viewModel else { return }
+            self.openFakeBalanceCatalogPicker { [weak viewModel] asset in
+                viewModel?.setExternalToken(
+                    symbol: asset.asset.symbol,
+                    name: asset.asset.name,
+                    imageURL: URL(string: asset.asset.image)
+                )
+            }
+        }
+        router.push(viewController: module.viewController)
+    }
+
+    func openFakeBalanceCatalogPicker(onSelect: @escaping (MultichainAsset) -> Void) {
+        let model = FakeBalanceCatalogPickerModel(
+            multichainService: keeperCoreMainAssembly.servicesAssembly.multichainService(),
+            currencyStore: keeperCoreMainAssembly.storesAssembly.currencyStore
+        )
+        let module = TokenPickerV2Assembly.module(
+            title: FakeBalanceStrings.allCoinsTitle,
+            wallet: wallet,
+            model: model,
+            keeperCoreMainAssembly: keeperCoreMainAssembly,
+            ignoresSafeArea: false,
+            presentation: .pushed,
+            headerStyle: .push,
+            onBack: { [weak self] in
+                self?.router.pop(animated: true)
+            }
+        )
+        module.output.didSelectAsset = { [weak self] asset in
+            guard let self else { return }
+            onSelect(asset)
+            self.router.pop(animated: true)
+        }
+        module.output.didFinish = { [weak self] in
+            self?.router.pop(animated: true)
+        }
+        router.push(viewController: module.viewController)
     }
 
     func openBackup(wallet: Wallet) {

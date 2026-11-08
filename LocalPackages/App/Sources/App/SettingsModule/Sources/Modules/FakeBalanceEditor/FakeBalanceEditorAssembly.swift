@@ -21,18 +21,27 @@ final class FakeBalanceEditorHostingViewController: TKHostingController<FakeBala
     }
 }
 
+struct FakeBalanceEditorModule {
+    let viewController: FakeBalanceEditorHostingViewController
+    let viewModel: FakeBalanceEditorViewModel
+}
+
 struct FakeBalanceEditorAssembly {
     @MainActor
     static func module(
         wallet: Wallet,
         managedBalanceStore: ManagedBalanceStore,
         appSettings: TKCore.AppSettings
-    ) -> FakeBalanceEditorHostingViewController {
+    ) -> FakeBalanceEditorModule {
         let viewModel = FakeBalanceEditorViewModel(
             wallet: wallet,
             managedBalanceStore: managedBalanceStore,
             appSettings: appSettings
         )
-        return FakeBalanceEditorHostingViewController(viewModel: viewModel)
+        let viewController = FakeBalanceEditorHostingViewController(viewModel: viewModel)
+        return FakeBalanceEditorModule(
+            viewController: viewController,
+            viewModel: viewModel
+        )
     }
 }

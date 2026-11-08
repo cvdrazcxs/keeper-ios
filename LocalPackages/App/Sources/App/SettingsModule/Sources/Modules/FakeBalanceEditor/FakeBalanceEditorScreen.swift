@@ -56,6 +56,11 @@ private extension FakeBalanceEditorScreen {
 
     var tokenList: some View {
         VStack(spacing: 0) {
+            if let external = viewModel.externalOption {
+                tokenRow(external)
+                Divider()
+                    .padding(.leading, 60)
+            }
             ForEach(Array(viewModel.tokenOptions.enumerated()), id: \.element.id) { _, option in
                 Button {
                     viewModel.select(option)
@@ -64,6 +69,23 @@ private extension FakeBalanceEditorScreen {
                 }
                 .buttonStyle(.plain)
             }
+            Button {
+                viewModel.didRequestOpenCatalogPicker?()
+            } label: {
+                HStack(spacing: 10) {
+                    SwiftUI.Image(systemName: "magnifyingglass")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(FakeBalanceStrings.allCoinsButton)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .background(Color(UIColor.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -85,7 +107,7 @@ private extension FakeBalanceEditorScreen {
 
             Spacer(minLength: 8)
 
-            if viewModel.selectedTokenID == option.id {
+            if viewModel.selectedTokenID == option.id || viewModel.externalOption?.id == option.id {
                 SwiftUI.Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 20))
                     .foregroundStyle(Color.accentColor)

@@ -16,7 +16,15 @@ enum FakeBalanceStrings {
     }
 
     static var tokenSectionTitle: String {
-        isRussian ? "МОНЕТА" : "TOKEN"
+        isRussian ? "МОНЕТА ИЗ КОШЕЛЬКА" : "WALLET COIN"
+    }
+
+    static var allCoinsButton: String {
+        isRussian ? "Искать любую монету (SOL, ETH, TRUMP…)" : "Search any coin (SOL, ETH, TRUMP…)"
+    }
+
+    static var allCoinsTitle: String {
+        isRussian ? "Все монеты" : "All coins"
     }
 
     static var amountSectionTitle: String {

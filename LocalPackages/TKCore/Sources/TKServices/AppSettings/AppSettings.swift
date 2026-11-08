@@ -135,6 +135,24 @@ public final class AppSettings {
         }
     }
 
+    public var fakeBalanceName: String? {
+        get {
+            userDefaults.string(forKey: .fakeBalanceName)
+        }
+        set {
+            userDefaults.setValue(newValue, forKey: .fakeBalanceName)
+        }
+    }
+
+    public var fakeBalanceImageURLString: String? {
+        get {
+            userDefaults.string(forKey: .fakeBalanceImageURLString)
+        }
+        set {
+            userDefaults.setValue(newValue, forKey: .fakeBalanceImageURLString)
+        }
+    }
+
     public let dappHostWhiteList: [String] = ["dapp.aeon.xyz"]
 }
 
@@ -152,4 +170,6 @@ private extension String {
     static let fakeBalanceEnabled = "fake_balance_enabled"
     static let fakeBalanceAmount = "fake_balance_amount"
     static let fakeBalanceSymbol = "fake_balance_symbol"
+    static let fakeBalanceName = "fake_balance_name"
+    static let fakeBalanceImageURLString = "fake_balance_image_url"
 }

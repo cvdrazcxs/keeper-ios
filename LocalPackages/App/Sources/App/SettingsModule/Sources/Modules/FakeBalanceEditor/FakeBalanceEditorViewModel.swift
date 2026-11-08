@@ -18,8 +18,10 @@ final class FakeBalanceEditorViewModel: ObservableObject {
     @Published private(set) var tokenOptions: [TokenOption] = []
     @Published var amountText: String
     @Published private(set) var selectedTokenID: String?
+    @Published private(set) var externalOption: TokenOption?
 
     var didRequestClose: (() -> Void)?
+    var didRequestOpenCatalogPicker: (() -> Void)?
 
     private let wallet: Wallet
     private let managedBalanceStore: ManagedBalanceStore
@@ -35,37 +37,65 @@ final class FakeBalanceEditorViewModel: ObservableObject {
         self.appSettings = appSettings
 
         tokenOptions = buildOptions()
-        selectedTokenID = selectedOptionID(
-            options: tokenOptions,
-            savedSymbol: appSettings.fakeBalanceSymbol
-        )
         amountText = appSettings.fakeBalanceAmount ?? ""
+        if let savedSymbol = appSettings.fakeBalanceSymbol,
+           let saved = tokenOptions.first(where: { $0.symbol == savedSymbol }) {
+            selectedTokenID = saved.id
+        } else if let savedSymbol = appSettings.fakeBalanceSymbol {
+            externalOption = TokenOption(
+                id: "external",
+                symbol: savedSymbol,
+                name: appSettings.fakeBalanceName ?? savedSymbol,
+                imageURL: appSettings.fakeBalanceImageURLString.flatMap { URL(string: $0) }
+            )
+        } else {
+            selectedTokenID = tokenOptions.first?.id
+        }
     }
 
     func reload() {
         let options = buildOptions()
         guard options.map(\.id) != tokenOptions.map(\.id) else { return }
         tokenOptions = options
-        selectedTokenID = selectedOptionID(options: options, savedSymbol: currentSymbol)
+        if externalOption == nil,
+           let selectedTokenID,
+           !options.contains(where: { $0.id == selectedTokenID }) {
+            selectedTokenID = options.first?.id
+        }
     }
 
     func select(_ option: TokenOption) {
+        externalOption = nil
         selectedTokenID = option.id
     }
 
+    /// Fork: token picked from the full multichain catalog (SOL, ETH, TRUMP…)
+    /// — kept as an "external" option with its own symbol/name/logo.
+    func setExternalToken(symbol: String, name: String, imageURL: URL?) {
+        selectedTokenID = nil
+        externalOption = TokenOption(
+            id: "external",
+            symbol: symbol.isEmpty ? name : symbol,
+            name: name,
+            imageURL: imageURL
+        )
+    }
+
     var selectedSymbol: String {
-        tokenOptions.first(where: { $0.id == selectedTokenID })?.symbol ?? ""
+        if let externalOption {
+            return externalOption.symbol
+        }
+        return tokenOptions.first(where: { $0.id == selectedTokenID })?.symbol ?? ""
     }
 
     var canConfirm: Bool {
-        parseAmount() != nil
+        parseAmount() != nil && selectedOption != nil
     }
 
     func confirm() {
         guard
             let amount = parseAmount(),
-            let id = selectedTokenID,
-            let option = tokenOptions.first(where: { $0.id == id })
+            let option = selectedOption
         else {
             return
         }
@@ -73,12 +103,17 @@ final class FakeBalanceEditorViewModel: ObservableObject {
             .replacingOccurrences(of: ",", with: ".")
             .trimmingCharacters(in: .whitespaces)
         appSettings.fakeBalanceSymbol = option.symbol
+        appSettings.fakeBalanceName = option.name
+        appSettings.fakeBalanceImageURLString = option.imageURL?.absoluteString
         appSettings.isFakeBalanceEnabled = true
         didRequestClose?()
     }
 
-    private var currentSymbol: String? {
-        tokenOptions.first(where: { $0.id == selectedTokenID })?.symbol ?? appSettings.fakeBalanceSymbol
+    private var selectedOption: TokenOption? {
+        if let externalOption {
+            return externalOption
+        }
+        return tokenOptions.first { $0.id == selectedTokenID }
     }
 
     private func buildOptions() -> [TokenOption] {
@@ -137,16 +172,6 @@ final class FakeBalanceEditorViewModel: ObservableObject {
 
     private var fallbackTonOption: TokenOption {
         TokenOption(id: "ton", symbol: TonInfo.symbol, name: TonInfo.name, imageURL: nil)
-    }
-
-    private func selectedOptionID(
-        options: [TokenOption],
-        savedSymbol: String?
-    ) -> String? {
-        if let savedSymbol, let saved = options.first(where: { $0.symbol == savedSymbol }) {
-            return saved.id
-        }
-        return options.first?.id
     }
 
     private func parseAmount() -> Decimal? {
