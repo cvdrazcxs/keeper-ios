@@ -24,13 +24,19 @@ struct FakeBalanceState {
             .joined(separator: ";")
     }
 
-    /// Sum of all fake amounts — the header shows it as the fiat total
-    /// ("$ 500") with the selected display-currency symbol.
-    var displayTotalAmount: Decimal? {
+    /// Fiat total of every fake: fake amount × the live unit price when one
+    /// is resolvable (keeping the header equal to the token rows), else the
+    /// raw amount. Displayed with the display-currency symbol.
+    func displayTotalFiat(
+        unitPriceResolver: ((_ fakeSymbol: String) -> Decimal?)?
+    ) -> Decimal? {
+        guard isEnabled, !items.isEmpty else { return nil }
         var total: Decimal?
         for item in items {
             guard let amount = Self.decimalAmount(ofText: item.amount) else { continue }
-            total = (total ?? 0) + amount
+            let unitPrice = unitPriceResolver?(item.symbol)
+            let value = unitPrice.map { amount * $0 } ?? amount
+            total = (total ?? 0) + value
         }
         return total
     }

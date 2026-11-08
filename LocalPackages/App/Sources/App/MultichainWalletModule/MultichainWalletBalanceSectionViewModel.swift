@@ -173,9 +173,29 @@ final class MultichainWalletBalanceSectionViewModel: ObservableObject {
                 state: state,
                 freshness: freshnessModel.freshness,
                 headerMapper: headerMapper,
+                fakeUnitPriceResolver: fakeUnitPriceResolver(),
                 configuration: configuration
             )
         )
+    }
+
+    /// Fork: resolves the live unit price of a faked token from the wallet's
+    /// portfolio, so the header total always equals the sum of the faked rows.
+    private func fakeUnitPriceResolver() -> (String) -> Decimal? {
+        let assets = portfolioStore.getState()[wallet]?.assets ?? []
+        let currency = currencyStore.getState()
+        let formatting = portfolioFormatting
+        return { fakeSymbol in
+            let normalized = FakeBalanceState.normalizedSymbol(fakeSymbol)
+            guard let asset = assets.first(where: {
+                FakeBalanceState.normalizedSymbol($0.asset.symbol) == normalized
+            }) else {
+                return nil
+            }
+            return formatting
+                .lookupDouble(in: asset.price.prices, currency: currency)
+                .map { Decimal($0) }
+        }
     }
 
     private func portfolioTotal() -> (amount: Decimal, currency: Currency)? {

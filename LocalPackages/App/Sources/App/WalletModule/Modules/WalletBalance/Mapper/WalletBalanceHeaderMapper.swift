@@ -42,14 +42,20 @@ struct WalletBalanceHeaderMapper {
     }
 
     /// Fork: the enabled fake balance renders exactly like the real fiat
-    /// total — the amount with the display-currency symbol ("$ 500",
-    /// "2 500 ₽"), never a token suffix. Several faked tokens are summed up.
-    func mapFakeBalanceAmountIfEnabled(currency: Currency?) -> BalanceViewContent.Balance? {
+    /// total — the display-currency value of every faked token, converted
+    /// through its live unit price so the header matches the token row.
+    /// Tokens without a resolvable price count their raw typed amount.
+    func mapFakeBalanceAmountIfEnabled(
+        currency: Currency?,
+        unitPriceResolver: ((String) -> Decimal?)? = nil
+    ) -> BalanceViewContent.Balance? {
         guard
             let appSettings,
             appSettings.isFakeBalanceEnabled,
             let currency,
-            let total = FakeBalanceState.current(from: appSettings).displayTotalAmount
+            let total = FakeBalanceState
+                .current(from: appSettings)
+                .displayTotalFiat(unitPriceResolver: unitPriceResolver)
         else {
             return nil
         }

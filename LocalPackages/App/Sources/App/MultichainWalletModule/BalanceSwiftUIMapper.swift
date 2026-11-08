@@ -10,6 +10,7 @@ enum BalanceSwiftUIMapper {
         state: WalletTotalBalanceModel.State,
         freshness: BalanceFreshness,
         headerMapper: WalletBalanceHeaderMapper,
+        fakeUnitPriceResolver: ((String) -> Decimal?)? = nil,
         configuration: Configuration
     ) -> BalanceViewConfig {
         let balanceContent: BalanceViewContent.Balance = {
@@ -17,7 +18,8 @@ enum BalanceSwiftUIMapper {
                 return .secure()
             }
             if let fake = headerMapper.mapFakeBalanceAmountIfEnabled(
-                currency: portfolioTotal.map { $0.currency }
+                currency: portfolioTotal.map { $0.currency },
+                unitPriceResolver: fakeUnitPriceResolver
             ) {
                 return fake
             }
